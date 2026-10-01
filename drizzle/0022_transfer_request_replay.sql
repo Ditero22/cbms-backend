@@ -1,0 +1,2 @@
+ALTER TABLE "inventory_transfers" ADD COLUMN "request_key" uuid;--> statement-breakpoint
+ALTER TABLE "inventory_transfers" ADD CONSTRAINT "inventory_transfers_request_key_unique" UNIQUE("request_key");

@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+!.env.production.example
+!.env.staging.example
+.npm-cache
+coverage
+.local/
+*.tsbuildinfo
+CBMS-BACKEND.md

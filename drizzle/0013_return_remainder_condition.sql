@@ -1,0 +1,2 @@
+ALTER TABLE "order_return_items" ADD COLUMN "remainder_condition" text;--> statement-breakpoint
+ALTER TABLE "order_return_items" ADD CONSTRAINT "order_return_items_remainder_condition_valid" CHECK ("order_return_items"."remainder_condition" is null or ("order_return_items"."condition" = 'Resalable' and "order_return_items"."accepted_quantity" < "order_return_items"."quantity" and "order_return_items"."remainder_condition" in ('Damaged', 'Defective', 'Used', 'Lost', 'Non-returnable')));

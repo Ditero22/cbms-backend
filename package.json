@@ -1,0 +1,57 @@
+{
+  "name": "cbms-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --import=./scripts/node-compat.mjs --import=tsx --watch src/server.ts",
+    "build": "tsc -b && tsc-alias -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env dist/src/server.js",
+    "lint": "eslint src drizzle.config.ts",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" drizzle.config.ts vitest.config.ts vitest.integration.config.ts",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" drizzle.config.ts vitest.config.ts vitest.integration.config.ts",
+    "db:generate": "node --env-file-if-exists=.env --import=./scripts/node-compat.mjs ./node_modules/drizzle-kit/bin.cjs generate",
+    "db:migrate": "node --env-file-if-exists=.env --import=./scripts/node-compat.mjs --import=tsx src/database/migrate.ts",
+    "db:seed": "node --env-file-if-exists=.env --import=./scripts/node-compat.mjs --import=tsx src/database/seed.ts",
+    "db:seed:sample": "node --env-file-if-exists=.env --import=./scripts/node-compat.mjs --import=tsx src/database/seed-sample-data.ts",
+    "db:provision-admin": "node --env-file-if-exists=.env dist/src/database/provision-admin.js",
+    "recovery:rehearse": "node --env-file-if-exists=.env scripts/rehearse-disposable-restore.mjs",
+    "test": "vitest run",
+    "test:integration": "node scripts/run-integration-tests.mjs",
+    "test:integration:local": "node --env-file-if-exists=.env scripts/run-local-integration-tests.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.911.0",
+    "@aws-sdk/s3-request-presigner": "^3.911.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "drizzle-orm": "^0.45.3",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "pg": "^8.16.3",
+    "pino": "^9.13.0",
+    "pino-http": "^10.5.0",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.5.2",
+    "@types/pg": "^8.15.5",
+    "drizzle-kit": "^0.31.5",
+    "eslint": "^9.36.0",
+    "prettier": "^3.6.2",
+    "tsc-alias": "^1.9.5",
+    "tsx": "^4.20.5",
+    "typescript": "~5.9.2",
+    "typescript-eslint": "^8.44.1",
+    "vitest": "^5.0.2"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.12"
+    }
+  }
+}

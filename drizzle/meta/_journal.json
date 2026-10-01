@@ -1,0 +1,216 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790728862433,
+      "tag": "0000_hot_veda",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790730958205,
+      "tag": "0001_famous_cargill",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790735653934,
+      "tag": "0002_user_role_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790739000000,
+      "tag": "0003_delivery_status_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790742000000,
+      "tag": "0004_employee_update_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790745600000,
+      "tag": "0005_expense_review_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790749200000,
+      "tag": "0006_report_export_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790752800000,
+      "tag": "0007_record_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790756400000,
+      "tag": "0008_audit_entity_history_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790779541981,
+      "tag": "0009_order_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790780416854,
+      "tag": "0010_order_reservations",
+      "breakpoints": true
+    },
+    {
+      "when": 1790784000000,
+      "version": "7",
+      "breakpoints": true,
+      "idx": 11,
+      "tag": "0011_legacy_delivery_backfill"
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790785582400,
+      "tag": "0012_legacy_delivery_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790786631483,
+      "tag": "0013_return_remainder_condition",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790830000000,
+      "tag": "0014_fleet_workflows",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790830001000,
+      "tag": "0015_payment_receipt_metadata",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790830002000,
+      "tag": "0016_private_proof_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790830003000,
+      "tag": "0017_vehicle_capacity_pair",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790830004000,
+      "tag": "0018_inventory_detail_reorder",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790830005000,
+      "tag": "0019_expense_detail_submission",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790837038357,
+      "tag": "0020_clear_anthem",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790850655950,
+      "tag": "0021_master_data_contacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790851216903,
+      "tag": "0022_transfer_request_replay",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790854509679,
+      "tag": "0023_order_create_request_replay",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790857605236,
+      "tag": "0024_customer_branch_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790860469514,
+      "tag": "0025_admin_only_cross_branch_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790863520156,
+      "tag": "0026_payroll_create_request_replay",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790865624197,
+      "tag": "0027_vehicle_branch_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790873053930,
+      "tag": "0028_financial_payment_proofs",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790873802756,
+      "tag": "0029_inventory_ledger_sequence",
+      "breakpoints": true
+    }
+  ]
+}
