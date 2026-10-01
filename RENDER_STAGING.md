@@ -9,6 +9,49 @@ This runbook prepares a free-tier staging deployment with the current applicatio
 
 The Pages proxy keeps browser API traffic on the Pages origin. That matches the backend's secure `SameSite=Lax` session cookie and avoids exposing the Render API URL to the frontend bundle. The proxy target is a Cloudflare Pages runtime variable, not a build-time variable.
 
+## Resource names used in this guide
+
+Use these names so each provider resource is easy to identify as staging. Provider names may already be taken; if a name is unavailable, add a short suffix and use the actual generated URL/name consistently in all the settings below.
+
+If you change the Render service name, update the `name` field in backend `render.yaml` before creating its Blueprint. If you change the R2 bucket name, use that exact name for Render's `R2_BUCKET_NAME`. If Cloudflare assigns a different Pages URL, use its exact origin for Render's `FRONTEND_URL` and `CORS_ORIGINS`.
+
+| Provider         | Resource                                   | Name                             |
+| ---------------- | ------------------------------------------ | -------------------------------- |
+| GitHub           | Backend repository                         | `Ditero22/cbms-backend`          |
+| GitHub           | Frontend repository                        | `Ditero22/cbms-frontend`         |
+| Neon             | PostgreSQL project                         | `cbms-staging-ditero22`          |
+| Neon             | Branch                                     | `main`                           |
+| Cloudflare Pages | Frontend project                           | `cbms-frontend-staging-ditero22` |
+| Cloudflare R2    | Private proof bucket                       | `cbms-staging-proofs-ditero22`   |
+| Cloudflare R2    | S3 API token                               | `cbms-staging-proof-storage`     |
+| Render           | API service (already set in `render.yaml`) | `cbms-api-staging-ditero22`      |
+
+Neon may supply its own default database/role names when creating the project. Keep those defaults and use the connection strings Neon generates; CBMS does not require a particular PostgreSQL database or role name.
+
+## Files to push before provider setup
+
+These deployment files are in the two existing GitHub repositories. Push them to `main` before creating the Cloudflare Pages project or running the database workflow.
+
+In `Ditero22/cbms-backend`:
+
+```powershell
+Set-Location C:\Users\karlo\Documents\CBMS\cbms-backend
+git add -- .github/workflows/staging-database.yml RENDER_STAGING.md render.yaml src/database/provision-admin.ts
+git commit -m "Prepare Render and Neon staging deployment"
+git push origin main
+```
+
+In `Ditero22/cbms-frontend`:
+
+```powershell
+Set-Location C:\Users\karlo\Documents\CBMS\cbms-frontend
+git add -- .github/workflows/ci.yml eslint.config.js package.json "functions/api/[[path]].js" public/_headers public/_routes.json tests/pages-proxy.test.mjs
+git commit -m "Add Cloudflare Pages API proxy"
+git push origin main
+```
+
+These commands stage only the named files. If Git says there is nothing to commit, check the repository's status before continuing.
+
 ## Before creating resources
 
 Use a **new, empty staging database**. Do not point the workflow at the old Neon database or any database containing CBMS data until its migration journal, accounts, and data have been inventoried and a recovery plan has been tested. Before upgrading a database with existing data, review migration `0025`'s account-scope effects and measure migration `0029`'s inventory-ledger table-lock duration on a representative copy. Back up the database before applying migrations.
@@ -17,16 +60,22 @@ Keep synthetic staging data only. Do not copy customer, employee, payroll, payme
 
 ## 1. Create the Neon staging database
 
-Create a new PostgreSQL project/database in a nearby region. Keep its connection strings private.
+In Neon, choose **Create project** and enter `cbms-staging-ditero22`. Choose Singapore if Neon offers it for your account; otherwise choose the closest available region. Keep the generated database/role names and connection strings private. Use this project only for CBMS staging.
 
 - Runtime `DATABASE_URL` for Render: use Neon’s **pooled** connection string and require TLS.
 - GitHub Actions secret `STAGING_DATABASE_URL`: use Neon’s **direct, unpooled** connection string and require TLS. Migrations and database locks should not use the transaction pooler.
 
-Add `STAGING_DATABASE_URL` in the backend GitHub repository’s Actions secrets. Never put a database URL in a commit, issue, workflow log, or chat.
+In GitHub, open `Ditero22/cbms-backend` → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**. Add:
+
+| Secret name            | Value                                                      |
+| ---------------------- | ---------------------------------------------------------- |
+| `STAGING_DATABASE_URL` | Neon direct (unpooled) connection string with TLS required |
+
+Never put a database URL in a commit, issue, workflow log, or chat.
 
 ## 2. Create the Cloudflare Pages site
 
-Create a Pages project from `Ditero22/cbms-frontend`, production branch `main`:
+In Cloudflare, choose **Workers & Pages** → **Create** → **Pages** → **Connect to Git**. Select `Ditero22/cbms-frontend`, set the Pages project name to `cbms-frontend-staging-ditero22`, and choose production branch `main`:
 
 - Build command: `npm run build`
 - Build output directory: `dist`
@@ -37,18 +86,18 @@ The frontend already defaults to `/api/v1`. The Pages Function in `functions/api
 
 In Pages settings, choose **Fail closed** for exhausted Functions quotas so API routes return an error instead of falling through to a static SPA response. Pages Functions use the Workers Free daily request allowance; the API will be unavailable if that allowance is exhausted until it resets.
 
-After the first Pages deployment, record the exact production origin, such as `https://<project>.pages.dev`. Use that origin exactly for the backend's `FRONTEND_URL` and `CORS_ORIGINS`. Do not allow preview origins unless preview deployments are explicitly secured and required.
+After the first Pages deployment, copy its exact production URL. It will normally be `https://cbms-frontend-staging-ditero22.pages.dev`; if Cloudflare selected another name, use the URL shown in the dashboard. Use that exact origin (scheme and hostname only) for the backend's `FRONTEND_URL` and `CORS_ORIGINS`. Do not allow preview origins unless preview deployments are explicitly secured and required.
 
 ## 3. Create private R2 storage
 
-Create a private R2 bucket for staging proofs and an S3 API token scoped to that bucket with object read/write access. Do not enable public access. Keep the account ID, access key, and secret key in Render's environment-variable store only. This backend already supports the R2 S3-compatible API; do not use the Render filesystem for proof files because free instances have ephemeral storage.
+In Cloudflare R2, create the private bucket `cbms-staging-proofs-ditero22`. Do not enable public access. Create an S3 API token named `cbms-staging-proof-storage`, scoped only to that bucket, with object read and write permissions. Save its access key and secret when Cloudflare shows them; put them only into Render's environment-variable store. Record the Cloudflare account ID for the same account. This backend already supports the R2 S3-compatible API; do not use the Render filesystem for proof files because free instances have ephemeral storage.
 
 ## 4. Apply migrations and provision the initial administrator
 
 The backend intentionally refuses to start when migrations are pending, and the Render free service does not provide a pre-deploy migration command. The backend repository includes a manual GitHub Actions workflow named **Staging database operation** for these one-time operations.
 
-1. In GitHub Actions, run **Staging database operation** on the `main` branch with operation `migrate`; enter exactly `APPLY-STAGING-MIGRATIONS-AFTER-REVIEW` as confirmation. This first run is for the new empty database. For later migrations, review the migration and preflight/backup requirements above before entering the same confirmation. Confirm that the action succeeds before creating the Render service.
-2. Add repository Actions secrets `STAGING_ADMIN_EMAIL` and `STAGING_ADMIN_PASSWORD` for a unique staging-only administrator.
+1. In `Ditero22/cbms-backend` → **Actions**, open **Staging database operation** → **Run workflow**. Select branch `main`, operation `migrate`, and enter exactly `APPLY-STAGING-MIGRATIONS-AFTER-REVIEW` as migration confirmation. This first run is for the new empty database. For later migrations, review the migration and preflight/backup requirements above before entering the same confirmation. Confirm that the action succeeds before creating the Render service.
+2. In the same backend repository's Actions secrets, add `STAGING_ADMIN_EMAIL` and `STAGING_ADMIN_PASSWORD` for a unique staging-only administrator. These are one-time provisioning credentials, not the Render runtime secrets.
 3. Dispatch the same workflow on `main` with operation `provision-admin` and enter exactly `PROVISION-EMPTY-STAGING-DATABASE` in its confirmation field.
 4. Confirm the run succeeds, then remove the temporary `STAGING_ADMIN_PASSWORD` repository secret. The provisioning script refuses to run if any user already exists and logs no account email or password.
 
@@ -56,26 +105,33 @@ The admin operation is deliberately guarded by both the exact confirmation phras
 
 ## 5. Create the Render API service
 
-After migrations and administrator provisioning succeed, create a Blueprint from the backend repository and its `render.yaml`. The manifest creates the API service only; it does not create a database.
+After migrations and administrator provisioning succeed, in Render choose **New** → **Blueprint** and select `Ditero22/cbms-backend` on branch `main`. Render reads `render.yaml` from the repository root and creates the API service named `cbms-api-staging-ditero22`. The manifest creates the API service only; it does not create a database.
 
 Set the prompted values in Render:
 
 - `DATABASE_URL`: Neon pooled runtime URI.
 - `FRONTEND_URL`: exact production Pages origin.
 - `CORS_ORIGINS`: the same exact production Pages origin (comma-separated only if more trusted origins are intentionally required).
-- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`: staging R2 settings.
+- `R2_ACCOUNT_ID`: Cloudflare account ID for the bucket.
+- `R2_ACCESS_KEY_ID`: access key from token `cbms-staging-proof-storage`.
+- `R2_SECRET_ACCESS_KEY`: secret key from that same token.
+- `R2_BUCKET_NAME`: `cbms-staging-proofs-ditero22`.
+
+Leave `R2_PUBLIC_URL` unset. Proof attachments are private and delivered through authenticated API routes.
 
 Render generates `SESSION_SECRET`; the manifest sets `TRUST_PROXY=true`, `NODE_ENV=production`, and a small database pool. The health check is `/api/ready`. Automatic deploys are disabled so a later commit cannot deploy database-dependent code before its migration is deliberately applied. After reviewing a future migration and backup plan, run the migration workflow first, then deploy that commit from Render.
 
-The service URL is the API origin, for example `https://<service>.onrender.com`. Keep it as an origin only: no path, query string, or credentials.
+After deployment, copy the exact URL shown for Render service `cbms-api-staging-ditero22`. It will normally be `https://cbms-api-staging-ditero22.onrender.com`; if Render assigned another URL, use that actual origin. Keep it as an origin only: no path, query string, or credentials.
 
 ## 6. Connect Pages to the API
 
-In the Cloudflare Pages project's production **Runtime** variables, set:
+In Cloudflare Pages project `cbms-frontend-staging-ditero22` → **Settings** → **Variables and Secrets** → **Production**, add:
 
 - `CBMS_API_ORIGIN` = the HTTPS Render service origin.
 
 Redeploy Pages after adding this variable. This is a server-side Function variable; do not prefix it with `VITE_`, since Vite variables are embedded in browser assets.
+
+Keep `CBMS_API_ORIGIN` out of the **Preview** environment until preview domains are deliberately added to the backend CORS allowlist.
 
 ## 7. Verify the staging deployment
 
