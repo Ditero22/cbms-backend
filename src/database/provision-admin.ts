@@ -45,7 +45,7 @@ async function provisionAdministrator() {
       [env.bootstrapAdminEmail, env.bootstrapAdminName, passwordHash, roleId],
     )
     await client.query('commit')
-    console.info(`One-time administrator provisioned: ${env.bootstrapAdminEmail}`)
+    console.info('One-time administrator provisioned successfully.')
   } catch (error) {
     await client.query('rollback')
     throw error

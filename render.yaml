@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: cbms-api-staging-ditero22
+    runtime: docker
+    repo: https://github.com/Ditero22/cbms-backend
+    branch: main
+    region: singapore
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeployTrigger: 'off'
+    healthCheckPath: /api/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: 'true'
+      - key: PG_POOL_MAX
+        value: '5'
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false

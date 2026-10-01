@@ -1,0 +1,140 @@
+name: Staging database operation
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Select one explicit staging database operation
+        required: true
+        type: choice
+        options:
+          - migrate
+          - provision-admin
+      migration_confirmation:
+        description: For migrations, enter exactly APPLY-STAGING-MIGRATIONS-AFTER-REVIEW
+        required: false
+        type: string
+      provision_confirmation:
+        description: For admin provisioning, enter exactly PROVISION-EMPTY-STAGING-DATABASE
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbms-staging-database
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate staging operation request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require main and an explicit valid operation
+        shell: bash
+        env:
+          TARGET_REF: ${{ github.ref }}
+          OPERATION: ${{ inputs.operation }}
+          MIGRATION_CONFIRMATION: ${{ inputs.migration_confirmation }}
+          PROVISION_CONFIRMATION: ${{ inputs.provision_confirmation }}
+        run: |
+          if [[ "$TARGET_REF" != "refs/heads/main" ]]; then
+            echo "::error::Run staging database operations from the main branch only."
+            exit 1
+          fi
+          if [[ "$OPERATION" != "migrate" && "$OPERATION" != "provision-admin" ]]; then
+            echo "::error::Choose either migrate or provision-admin."
+            exit 1
+          fi
+          if [[ "$OPERATION" == "migrate" && "$MIGRATION_CONFIRMATION" != "APPLY-STAGING-MIGRATIONS-AFTER-REVIEW" ]]; then
+            echo "::error::Migration requires the exact reviewed-staging-migration confirmation."
+            exit 1
+          fi
+          if [[ "$OPERATION" == "provision-admin" && "$PROVISION_CONFIRMATION" != "PROVISION-EMPTY-STAGING-DATABASE" ]]; then
+            echo "::error::Admin provisioning requires the exact empty-staging-database confirmation."
+            exit 1
+          fi
+
+      - name: Require the staging database secret
+        shell: bash
+        env:
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          if [[ -z "$STAGING_DATABASE_URL" ]]; then
+            echo "::error::Set the STAGING_DATABASE_URL repository Actions secret."
+            exit 1
+          fi
+
+      - name: Require one-time administrator secrets
+        if: inputs.operation == 'provision-admin'
+        shell: bash
+        env:
+          STAGING_ADMIN_EMAIL: ${{ secrets.STAGING_ADMIN_EMAIL }}
+          STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+        run: |
+          if [[ -z "$STAGING_ADMIN_EMAIL" || -z "$STAGING_ADMIN_PASSWORD" ]]; then
+            echo "::error::Set the STAGING_ADMIN_EMAIL and STAGING_ADMIN_PASSWORD repository Actions secrets."
+            exit 1
+          fi
+
+  migrate:
+    needs: validate
+    if: inputs.operation == 'migrate'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Create short-lived configuration-only session secret
+        shell: bash
+        run: node -e "process.stdout.write('SESSION_SECRET=' + require('node:crypto').randomBytes(48).toString('base64url') + '\\n')" >> "$GITHUB_ENV"
+
+      - name: Apply committed database migrations
+        run: npm run db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+
+  provision-admin:
+    needs: validate
+    if: inputs.operation == 'provision-admin'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Create short-lived configuration-only session secret
+        shell: bash
+        run: node -e "process.stdout.write('SESSION_SECRET=' + require('node:crypto').randomBytes(48).toString('base64url') + '\\n')" >> "$GITHUB_ENV"
+
+      - name: Provision the first administrator
+        run: npm run db:provision-admin
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.STAGING_ADMIN_EMAIL }}
+          BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+          BOOTSTRAP_ADMIN_NAME: CBMS Staging Administrator
