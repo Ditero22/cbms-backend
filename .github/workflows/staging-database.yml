@@ -96,7 +96,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      # The TypeScript migration runner is a dev dependency, even for production databases.
+      - run: npm ci --include=dev
 
       - name: Create short-lived configuration-only session secret
         shell: bash
@@ -124,7 +125,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      # Provisioning compiles TypeScript before running the generated command.
+      - run: npm ci --include=dev
       - run: npm run build
 
       - name: Create short-lived configuration-only session secret
