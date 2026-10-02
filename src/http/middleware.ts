@@ -46,6 +46,21 @@ export function configureRequestMiddleware(app: Express) {
   )
   app.use(express.json({ limit: '1mb', type: 'application/json' }))
   app.use(cookieParser())
+  app.use((req, _res, next) => {
+    if (env.authMode === 'jwt' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      const origin = req.get('origin')
+      if (!origin || !env.corsOrigins.has(origin)) {
+        return next(
+          new AppError(
+            403,
+            'ORIGIN_NOT_ALLOWED',
+            'This website is not allowed to change workspace data.',
+          ),
+        )
+      }
+    }
+    next()
+  })
   app.use(
     pinoHttp({
       logger,

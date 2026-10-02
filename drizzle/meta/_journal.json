@@ -211,6 +211,13 @@
       "when": 1790873802756,
       "tag": "0029_inventory_ledger_sequence",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790939644111,
+      "tag": "0030_jwt_refresh_rotation",
+      "breakpoints": true
     }
   ]
 }

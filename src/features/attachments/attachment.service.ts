@@ -5,7 +5,12 @@ import { AppError } from '@/shared/errors/AppError.js'
 import { logger } from '@/config/logger.js'
 import { getAssignedBranchScope } from '@/shared/security/branch-scope.js'
 import type { AuthenticatedUser } from '@/shared/types/auth.js'
-import { hasProofSignature, maxProofBytes, type ProofEntity } from './attachment.schemas.js'
+import {
+  hasProofSignature,
+  maxProofBytes,
+  proofEntitySchema,
+  type ProofEntity,
+} from './attachment.schemas.js'
 import { createProofKey, readProof, removeStoredProof, saveProof } from './attachment.storage.js'
 import { validateProofInput, type ValidatedProof } from './proof-input.js'
 
@@ -24,17 +29,21 @@ export async function authorizeProof(
   lock = false,
 ) {
   const permissions =
-    entity.entityType === 'payment'
-      ? ['payments.read']
-      : entity.entityType === 'vehicle-maintenance'
-        ? ['vehicles.maintenance', 'expenses.read']
-        : entity.entityType === 'driver-allowance'
-          ? ['driver-allowances.read']
-          : ['payroll.read']
+    entity.entityType === 'delivery'
+      ? ['deliveries.read']
+      : entity.entityType === 'payment'
+        ? ['payments.read']
+        : entity.entityType === 'vehicle-maintenance'
+          ? ['vehicles.maintenance', 'expenses.read']
+          : entity.entityType === 'driver-allowance'
+            ? ['driver-allowances.read']
+            : ['payroll.read']
   if (!permissions.every((key) => user.permissions.includes(key)))
     throw new AppError(403, 'FORBIDDEN', 'You do not have permission to view this proof.')
   if (upload && entity.entityType === 'payment' && !user.permissions.includes('payments.create'))
     throw new AppError(403, 'FORBIDDEN', 'You do not have permission to attach payment proof.')
+  if (upload && entity.entityType === 'delivery' && !user.permissions.includes('deliveries.update'))
+    throw new AppError(403, 'FORBIDDEN', 'You do not have permission to attach delivery proof.')
   if (
     upload &&
     entity.entityType === 'driver-allowance' &&
@@ -51,13 +60,15 @@ export async function authorizeProof(
     throw new AppError(403, 'FORBIDDEN', 'You do not have permission to attach payroll proof.')
   const branchScope = getAssignedBranchScope(user)
   const query =
-    entity.entityType === 'payment'
-      ? `select o.branch_id as "branchId", p.status from payments p join orders o on o.id=p.order_id where p.id=$1 ${lock ? 'for update of p' : ''}`
-      : entity.entityType === 'vehicle-maintenance'
-        ? `select branch_id as "branchId", status from vehicle_maintenance where id=$1 ${lock ? 'for update' : ''}`
-        : entity.entityType === 'driver-allowance'
-          ? `select branch_id as "branchId", status from driver_allowances where id=$1 ${lock ? 'for update' : ''}`
-          : `select e.branch_id as "branchId", e.payment_status as status from payroll_entries e join payroll_runs r on r.id=e.payroll_run_id where e.id=$1 and r.status='Processed' ${lock ? 'for update of e, r' : ''}`
+    entity.entityType === 'delivery'
+      ? `select o.branch_id as "branchId", d.status from deliveries d join orders o on o.id=d.order_id where d.id=$1 ${lock ? 'for update of d, o' : ''}`
+      : entity.entityType === 'payment'
+        ? `select o.branch_id as "branchId", p.status from payments p join orders o on o.id=p.order_id where p.id=$1 ${lock ? 'for update of p' : ''}`
+        : entity.entityType === 'vehicle-maintenance'
+          ? `select branch_id as "branchId", status from vehicle_maintenance where id=$1 ${lock ? 'for update' : ''}`
+          : entity.entityType === 'driver-allowance'
+            ? `select branch_id as "branchId", status from driver_allowances where id=$1 ${lock ? 'for update' : ''}`
+            : `select e.branch_id as "branchId", e.payment_status as status from payroll_entries e join payroll_runs r on r.id=e.payroll_run_id where e.id=$1 and r.status='Processed' ${lock ? 'for update of e, r' : ''}`
   const parent = (
     await client.query<{ branchId: string; status: string }>(query, [entity.entityId])
   ).rows[0]
@@ -198,9 +209,10 @@ export async function getProofContent(
   const attachment = result.rows[0]
   if (!attachment) throw new AppError(404, 'PROOF_NOT_FOUND', 'Proof not found.')
   if (
-    !['payment', 'vehicle-maintenance', 'driver-allowance', 'payroll-entry'].includes(
-      attachment.entityType,
-    )
+    !proofEntitySchema.safeParse({
+      entityType: attachment.entityType,
+      entityId: attachment.entityId,
+    }).success
   )
     throw new AppError(404, 'PROOF_NOT_FOUND', 'Proof not found.')
   await authorizeProof(attachment, user, false, client)

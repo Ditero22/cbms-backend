@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import app from '@/app.js'
+import { removeStoredProof } from '@/features/attachments/attachment.storage.js'
 import { pool } from '@/database/client.js'
 import {
   createSessionToken,
@@ -337,6 +338,67 @@ describe('delivery route permissions and branch scope', () => {
     )
     expect(hiddenForeign.status).toBe(404)
     expect(hiddenForeign.body.error.code).toBe('DELIVERY_NOT_FOUND')
+  })
+
+  it('stores optional delivery proof privately and rejects cross-branch content access', async () => {
+    const order = await createOrder('north', branchId, customerId)
+    const created = await createDelivery('north', order.id, order.orderItemId)
+    expect(created.status).toBe(201)
+    const delivery = created.body as { id: string }
+    const query = new URLSearchParams({ entityType: 'delivery', entityId: delivery.id })
+    const pdf = new TextEncoder().encode('%PDF-1.4\n1 0 obj <<>> endobj\n%%EOF')
+    const uploaded = await fetch(`${apiUrl}/api/v1/attachments?${query}`, {
+      method: 'POST',
+      headers: {
+        Cookie: cookies.north,
+        'Content-Type': 'application/pdf',
+        'x-file-name': 'delivery-proof.pdf',
+      },
+      body: new Blob([pdf], { type: 'application/pdf' }),
+    })
+    expect(uploaded.status).toBe(201)
+    const attachment = (await uploaded.json()) as { id: string }
+    try {
+      const own = await request<{ items: { id: string }[] }>(
+        'GET',
+        `/attachments?${query}`,
+        'north',
+      )
+      expect(own.status).toBe(200)
+      expect(own.body.items.map((item) => item.id)).toContain(attachment.id)
+      expect((await request('GET', `/attachments?${query}`, 'south')).status).toBe(404)
+      expect((await request('GET', `/attachments?${query}`, 'admin')).status).toBe(200)
+      for (const label of ['north', 'admin']) {
+        const response = await fetch(`${apiUrl}/api/v1/attachments/${attachment.id}/content`, {
+          headers: { Cookie: cookies[label] },
+        })
+        expect(response.status).toBe(200)
+        expect(new Uint8Array(await response.arrayBuffer())).toEqual(pdf)
+        expect(response.headers.get('cache-control')).toContain('no-store')
+      }
+      expect(
+        (
+          await fetch(`${apiUrl}/api/v1/attachments/${attachment.id}/content`, {
+            headers: { Cookie: cookies.south },
+          })
+        ).status,
+      ).toBe(404)
+      const deniedUpload = await fetch(`${apiUrl}/api/v1/attachments?${query}`, {
+        method: 'POST',
+        headers: {
+          Cookie: cookies.south,
+          'Content-Type': 'application/pdf',
+          'x-file-name': 'foreign.pdf',
+        },
+        body: new Blob([pdf]),
+      })
+      expect(deniedUpload.status).toBe(404)
+    } finally {
+      const saved = await pool.query('delete from attachments where id=$1 returning object_key', [
+        attachment.id,
+      ])
+      if (saved.rows[0]) await removeStoredProof(saved.rows[0].object_key)
+    }
   })
 
   it('keeps CSV export branch-scoped despite forged filters and requires the export grant', async () => {

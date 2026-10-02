@@ -114,6 +114,14 @@ export const userSessions = pgTable(
   ],
 )
 
+export const usedRefreshTokens = pgTable('used_refresh_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  sessionId: uuid('session_id')
+    .notNull()
+    .references(() => userSessions.id, { onDelete: 'cascade' }),
+  usedAt: timestamp('used_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const employees = pgTable(
   'employees',
   {

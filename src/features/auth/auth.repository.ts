@@ -91,6 +91,14 @@ export async function createSession(
 }
 
 export async function findSessionByTokenHash(tokenHash: string) {
+  return findSession(tokenHash, false)
+}
+
+export async function findSessionById(sessionId: string) {
+  return findSession(sessionId, true)
+}
+
+async function findSession(value: string, byId: boolean) {
   const result = await pool.query<AuthSession>(
     `select u.id, u.name, u.email, u.branch_id as "branchId",
             case when r.is_system = 1 then u.is_cross_branch else 0 end as "isCrossBranch",
@@ -102,9 +110,9 @@ export async function findSessionByTokenHash(tokenHash: string) {
      join roles r on r.id = u.role_id
      left join branches b on b.id = u.branch_id
      left join role_permissions rp on rp.role_id = r.id
-     where s.token_hash = $1 and u.status = 'Active' and u.deleted_at is null
+     where ${byId ? 's.id' : 's.token_hash'} = $1 and u.status = 'Active' and u.deleted_at is null
      group by u.id, r.name, r.is_system, b.name, s.id, s.expires_at`,
-    [tokenHash],
+    [value],
   )
 
   return result.rows[0]
@@ -119,5 +127,12 @@ export function updateSessionLastSeen(sessionId: string) {
 }
 
 export function deleteSessionByTokenHash(tokenHash: string) {
-  return pool.query('delete from user_sessions where token_hash = $1', [tokenHash])
+  return pool.query(
+    'delete from user_sessions where token_hash = $1 or id in (select session_id from used_refresh_tokens where token_hash = $1)',
+    [tokenHash],
+  )
+}
+
+export function revokeUserSessions(userId: string) {
+  return pool.query('delete from user_sessions where user_id = $1', [userId])
 }

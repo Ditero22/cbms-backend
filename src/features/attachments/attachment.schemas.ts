@@ -2,7 +2,13 @@ import { z } from 'zod'
 
 export const proofEntitySchema = z
   .object({
-    entityType: z.enum(['vehicle-maintenance', 'driver-allowance', 'payment', 'payroll-entry']),
+    entityType: z.enum([
+      'vehicle-maintenance',
+      'driver-allowance',
+      'payment',
+      'payroll-entry',
+      'delivery',
+    ]),
     entityId: z.uuid(),
   })
   .strict()

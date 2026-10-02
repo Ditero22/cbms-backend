@@ -9,6 +9,11 @@ const environmentSchema = z
     PORT: integerFromString(3000),
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
     SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must contain at least 32 characters'),
+    AUTH_MODE: z.enum(['session', 'jwt']).default('session'),
+    JWT_ACCESS_SECRET: z.string().default(''),
+    JWT_ISSUER: z.string().min(1).default('cbms-api'),
+    JWT_AUDIENCE: z.string().min(1).default('cbms-web'),
+    JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().min(300).max(900).default(600),
     FRONTEND_URL: z.url().default('http://localhost:5173'),
     CORS_ORIGINS: z.string().default('http://localhost:5173'),
     COOKIE_DOMAIN: z.string().optional().default(''),
@@ -32,6 +37,20 @@ const environmentSchema = z
     LOCAL_UPLOAD_DIR: z.string().min(1).default('.local/private-uploads'),
   })
   .superRefine((value, context) => {
+    if (value.AUTH_MODE === 'jwt' && value.JWT_ACCESS_SECRET.length < 32) {
+      context.addIssue({
+        code: 'custom',
+        path: ['JWT_ACCESS_SECRET'],
+        message: 'JWT mode requires a separate random signing secret of at least 32 characters.',
+      })
+    }
+    if (value.AUTH_MODE === 'jwt' && value.JWT_ACCESS_SECRET === value.SESSION_SECRET) {
+      context.addIssue({
+        code: 'custom',
+        path: ['JWT_ACCESS_SECRET'],
+        message: 'Use a signing secret distinct from SESSION_SECRET.',
+      })
+    }
     const storageValues = [
       value.R2_ACCOUNT_ID,
       value.R2_ACCESS_KEY_ID,
@@ -67,6 +86,13 @@ export const env = {
   port: parsed.PORT,
   databaseUrl: parsed.DATABASE_URL,
   sessionSecret: parsed.SESSION_SECRET,
+  authMode: parsed.AUTH_MODE,
+  jwt: {
+    secret: parsed.JWT_ACCESS_SECRET,
+    issuer: parsed.JWT_ISSUER,
+    audience: parsed.JWT_AUDIENCE,
+    ttlSeconds: parsed.JWT_ACCESS_TTL_SECONDS,
+  },
   frontendUrl: parsed.FRONTEND_URL,
   corsOrigins: new Set(
     parsed.CORS_ORIGINS.split(',')

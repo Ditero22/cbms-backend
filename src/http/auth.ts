@@ -2,7 +2,9 @@ import type { NextFunction, Request, Response } from 'express'
 import { AppError } from '@/shared/errors/AppError.js'
 import { sessionCookieName } from '@/shared/security/session.js'
 import type { AuthenticatedUser } from '@/shared/types/auth.js'
-import { authenticateSession } from '@/features/auth/auth.service.js'
+import { authenticateSession, authenticateAccessToken } from '@/features/auth/auth.service.js'
+import { env } from '@/config/env.js'
+import { accessCookieName } from '@/shared/security/access-token.js'
 
 export type { AuthenticatedUser } from '@/shared/types/auth.js'
 
@@ -17,10 +19,14 @@ declare global {
 
 export async function authenticate(req: Request, _res: Response, next: NextFunction) {
   try {
-    const token = req.cookies?.[sessionCookieName] as string | undefined
+    const token = req.cookies?.[env.authMode === 'jwt' ? accessCookieName : sessionCookieName] as
+      string | undefined
     if (!token) throw new AppError(401, 'AUTH_REQUIRED', 'Sign in to continue.')
 
-    req.user = await authenticateSession(token)
+    req.user =
+      env.authMode === 'jwt'
+        ? await authenticateAccessToken(token)
+        : await authenticateSession(token)
     next()
   } catch (error) {
     next(error)

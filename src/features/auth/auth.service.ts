@@ -7,6 +7,7 @@ import {
   sessionLifetimeMs,
 } from '@/shared/security/session.js'
 import * as authRepository from './auth.repository.js'
+import { verifyAccessToken } from '@/shared/security/access-token.js'
 
 type LoginRequestContext = {
   ipAddress: string | null
@@ -54,8 +55,18 @@ export async function signIn(email: string, password: string, context: LoginRequ
 
 export async function authenticateSession(token: string): Promise<AuthenticatedUser> {
   const session = await authRepository.findSessionByTokenHash(hashSessionToken(token))
+  return resolveSession(session)
+}
+
+export async function authenticateAccessToken(token: string): Promise<AuthenticatedUser> {
+  const claims = await verifyAccessToken(token)
+  const session = await authRepository.findSessionById(claims.sid)
+  if (session?.id !== claims.sub) throw new AppError(401, 'SESSION_EXPIRED', 'Sign in again.')
+  return resolveSession(session)
+}
+
+function resolveSession(session: authRepository.AuthSession | undefined): AuthenticatedUser {
   if (!session || new Date(session.expiresAt).getTime() <= Date.now()) {
-    if (session?.sessionId) await authRepository.deleteSessionById(session.sessionId)
     throw new AppError(401, 'SESSION_EXPIRED', 'Your session has expired. Sign in again.')
   }
 
