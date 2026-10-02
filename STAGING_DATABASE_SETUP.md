@@ -1,61 +1,42 @@
-# Staging Database Setup
+# Staging Database Operations
 
-## Issue
+The **Staging database operation** GitHub Actions workflow supports three explicit operations. It only runs from the `main` branch and requires the repository secret `STAGING_DATABASE_URL`.
 
-The GitHub Actions workflow `Staging database operation` is failing because required repository secrets are not configured.
+Configure repository secrets under **Settings → Secrets and variables → Actions**. Keep the database connection string and administrator credentials private; do not add them to this document, source control, issues, or chat.
 
-**Failing Job:** [Validate staging operation request](https://github.com/Ditero22/cbms-backend/actions/runs/37002751316/job/110823961077)
+## Check the database connection
 
-## Root Cause
+Use this after adding or rotating `STAGING_DATABASE_URL`:
 
-The validation step in `.github/workflows/staging-database.yml` checks for the following secrets before running any staging database operations:
+1. Open the repository's **Actions** tab.
+2. Select **Staging database operation**, then **Run workflow** from `main`.
+3. Choose **`check-connection`** and run it. No confirmation value is required.
 
-1. **`STAGING_DATABASE_URL`** - Required for all operations
-2. **`STAGING_ADMIN_EMAIL`** - Required only for `provision-admin` operation
-3. **`STAGING_ADMIN_PASSWORD`** - Required only for `provision-admin` operation
+This operation connects with the configured secret and runs `SELECT 1`. It does not apply migrations, create accounts, or change application data. A successful run confirms that the GitHub Actions runner can connect with that secret; it does not check whether the database has every application migration applied.
 
-These secrets are currently **not configured** in the repository, causing the workflow to fail with:
+## Apply committed migrations
+
+Choose **`migrate`** only after reviewing the committed migrations and intending to apply them to staging. Enter this exact confirmation when prompted:
+
+```text
+APPLY-STAGING-MIGRATIONS-AFTER-REVIEW
 ```
-::error::Set the STAGING_DATABASE_URL repository Actions secret.
+
+## Provision the first administrator
+
+Choose **`provision-admin`** only to provision the initial staging administrator in an empty staging database. Configure `STAGING_ADMIN_EMAIL` and `STAGING_ADMIN_PASSWORD` as repository Actions secrets, then enter this exact confirmation:
+
+```text
+PROVISION-EMPTY-STAGING-DATABASE
 ```
 
-## Solution
+Do not use this operation to reset or replace an existing administrator.
 
-### Step 1: Add `STAGING_DATABASE_URL` Secret
+## Workflow safeguards
 
-1. Navigate to your repository: **Settings → Secrets and variables → Actions**
-2. Click **New repository secret**
-3. Configure:
-   - **Name:** `STAGING_DATABASE_URL`
-   - **Value:** Your staging database connection string (e.g., `postgresql://user:password@host:port/database`)
-4. Click **Add secret**
+- Operations must be dispatched from `main`.
+- `STAGING_DATABASE_URL` is required for every operation.
+- Migration and administrator provisioning require their separate confirmation values.
+- The connection check is read-only and does not require either confirmation.
 
-### Step 2: Add Admin Provisioning Secrets (if needed)
-
-If you plan to run the `provision-admin` operation, also configure:
-
-1. **Secret 1:**
-   - **Name:** `STAGING_ADMIN_EMAIL`
-   - **Value:** Email address for the staging administrator
-
-2. **Secret 2:**
-   - **Name:** `STAGING_ADMIN_PASSWORD`
-   - **Value:** Password for the staging administrator
-
-### Step 3: Re-run the Workflow
-
-1. Go to the [Actions tab](https://github.com/Ditero22/cbms-backend/actions)
-2. Select **Staging database operation**
-3. Click **Run workflow**
-4. Choose your operation:
-   - **migrate** - Apply committed database migrations
-   - **provision-admin** - Provision the first administrator
-5. Provide required confirmations:
-   - For migrations: `APPLY-STAGING-MIGRATIONS-AFTER-REVIEW`
-   - For admin provisioning: `PROVISION-EMPTY-STAGING-DATABASE`
-6. Click **Run workflow**
-
-## Reference
-
-- **Workflow File:** [.github/workflows/staging-database.yml](https://github.com/Ditero22/cbms-backend/blob/main/.github/workflows/staging-database.yml)
-- **Failed Run:** [Run #37002751316](https://github.com/Ditero22/cbms-backend/actions/runs/37002751316)
+Workflow source: [`.github/workflows/staging-database.yml`](.github/workflows/staging-database.yml)

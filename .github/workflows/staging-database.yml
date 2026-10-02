@@ -8,6 +8,7 @@ on:
         required: true
         type: choice
         options:
+          - check-connection
           - migrate
           - provision-admin
       migration_confirmation:
@@ -44,8 +45,8 @@ jobs:
             echo "::error::Run staging database operations from the main branch only."
             exit 1
           fi
-          if [[ "$OPERATION" != "migrate" && "$OPERATION" != "provision-admin" ]]; then
-            echo "::error::Choose either migrate or provision-admin."
+          if [[ "$OPERATION" != "check-connection" && "$OPERATION" != "migrate" && "$OPERATION" != "provision-admin" ]]; then
+            echo "::error::Choose check-connection, migrate, or provision-admin."
             exit 1
           fi
           if [[ "$OPERATION" == "migrate" && "$MIGRATION_CONFIRMATION" != "APPLY-STAGING-MIGRATIONS-AFTER-REVIEW" ]]; then
@@ -78,6 +79,35 @@ jobs:
             echo "::error::Set the STAGING_ADMIN_EMAIL and STAGING_ADMIN_PASSWORD repository Actions secrets."
             exit 1
           fi
+
+  check-connection:
+    name: Check staging database connection (read-only)
+    needs: validate
+    if: inputs.operation == 'check-connection'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --include=dev
+
+      - name: Create short-lived configuration-only session secret
+        shell: bash
+        run: node -e "process.stdout.write('SESSION_SECRET=' + require('node:crypto').randomBytes(48).toString('base64url') + '\\n')" >> "$GITHUB_ENV"
+
+      - name: Verify database connectivity without changing data
+        run: npm run db:check
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
 
   migrate:
     needs: validate
