@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { classifyPgClientFailure } from './recovery-diagnostics.mjs'
 import pg from 'pg'
 
 const { Client } = pg
@@ -126,8 +127,9 @@ try {
       typeof error?.code === 'string' && /^[A-Z0-9_]{1,32}$/.test(error.code)
         ? ` (error code ${error.code})`
         : ''
+    const safeHint = typeof error?.safeHint === 'string' ? ` (${error.safeHint})` : ''
     console.error(
-      `Staging recovery rehearsal failed during ${currentPhase}${command ? `: ${command}` : errorCode}. No credentials, record contents, or raw provider error messages were logged. Inspect the failed phase and recovery target state before retrying.`,
+      `Staging recovery rehearsal failed during ${currentPhase}${command ? `: ${command}${safeHint}` : `${errorCode}${safeHint}`}. No credentials, record contents, or raw provider error messages were logged. Inspect the failed phase and recovery target state before retrying.`,
     )
   }
   process.exitCode = 1
@@ -388,13 +390,26 @@ function sha256(bytes) {
 
 function run(command, args, options) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { ...options, stdio: ['ignore', 'ignore', 'ignore'] })
-    child.once('error', () => reject(new Error(`${command} could not be started.`)))
+    const child = spawn(command, args, { ...options, stdio: ['ignore', 'ignore', 'pipe'] })
+    const errorOutput = []
+    let errorOutputSize = 0
+    child.stderr?.on('data', (chunk) => {
+      if (errorOutputSize >= 8192) return
+      const captured = Buffer.from(chunk).subarray(0, 8192 - errorOutputSize)
+      errorOutput.push(captured)
+      errorOutputSize += captured.length
+    })
+    child.once('error', () => {
+      const error = new Error(`${command} could not be started.`)
+      error.commandName = command
+      reject(error)
+    })
     child.once('close', (code) => {
       if (code === 0) return resolve()
       const error = new Error(`${command} failed.`)
       error.commandName = command
       error.exitCode = code
+      error.safeHint = classifyPgClientFailure(Buffer.concat(errorOutput).toString('utf8'))
       reject(error)
     })
   })
@@ -402,13 +417,26 @@ function run(command, args, options) {
 
 function runWithInput(command, args, input, options) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { ...options, stdio: ['pipe', 'ignore', 'ignore'] })
-    child.once('error', () => reject(new Error(`${command} could not be started.`)))
+    const child = spawn(command, args, { ...options, stdio: ['pipe', 'ignore', 'pipe'] })
+    const errorOutput = []
+    let errorOutputSize = 0
+    child.stderr?.on('data', (chunk) => {
+      if (errorOutputSize >= 8192) return
+      const captured = Buffer.from(chunk).subarray(0, 8192 - errorOutputSize)
+      errorOutput.push(captured)
+      errorOutputSize += captured.length
+    })
+    child.once('error', () => {
+      const error = new Error(`${command} could not be started.`)
+      error.commandName = command
+      reject(error)
+    })
     child.once('close', (code) => {
       if (code === 0) return resolve()
       const error = new Error(`${command} failed.`)
       error.commandName = command
       error.exitCode = code
+      error.safeHint = classifyPgClientFailure(Buffer.concat(errorOutput).toString('utf8'))
       reject(error)
     })
     input.once('error', () => child.kill())
