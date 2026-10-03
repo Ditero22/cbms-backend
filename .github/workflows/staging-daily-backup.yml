@@ -1,46 +1,38 @@
-name: Staging to isolated recovery rehearsal
+name: Daily staging recovery backup
 
 on:
   workflow_dispatch:
-    inputs:
-      confirmation:
-        description: Enter exactly RESTORE-TO-ISOLATED-cbms-recovery after checking all configured targets
-        required: true
-        type: string
+  schedule:
+    # 02:23 Asia/Singapore daily (18:23 UTC). Avoid the top of the hour, when GitHub may delay scheduled runs.
+    - cron: '23 18 * * *'
 
 permissions:
   contents: read
 
 concurrency:
-  group: cbms-staging-recovery-rehearsal
+  group: cbms-staging-daily-backup
   cancel-in-progress: false
 
 jobs:
   validate:
-    name: Validate isolated recovery request
+    name: Validate staging backup configuration
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require main and exact recovery confirmation
+      - name: Require the main branch
         shell: bash
         env:
           TARGET_REF: ${{ github.ref }}
-          CONFIRMATION: ${{ inputs.confirmation }}
         run: |
           if [[ "$TARGET_REF" != "refs/heads/main" ]]; then
-            echo "::error::Run the recovery rehearsal from main only."
-            exit 1
-          fi
-          if [[ "$CONFIRMATION" != "RESTORE-TO-ISOLATED-cbms-recovery" ]]; then
-            echo "::error::The exact isolated recovery confirmation is required."
+            echo "::error::Run staging backups from main only."
             exit 1
           fi
 
-      - name: Check only whether required recovery secrets exist
+      - name: Check only whether required backup secrets exist
         shell: bash
         env:
           STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-          RECOVERY_DATABASE_URL: ${{ secrets.RECOVERY_DATABASE_URL }}
           STAGING_R2_ACCOUNT_ID: ${{ secrets.STAGING_R2_ACCOUNT_ID }}
           STAGING_R2_ACCESS_KEY_ID: ${{ secrets.STAGING_R2_ACCESS_KEY_ID }}
           STAGING_R2_SECRET_ACCESS_KEY: ${{ secrets.STAGING_R2_SECRET_ACCESS_KEY }}
@@ -53,7 +45,7 @@ jobs:
           BACKUP_RETENTION_DAYS: ${{ secrets.BACKUP_RETENTION_DAYS }}
         run: |
           missing=0
-          for name in STAGING_DATABASE_URL RECOVERY_DATABASE_URL STAGING_R2_ACCOUNT_ID STAGING_R2_ACCESS_KEY_ID STAGING_R2_SECRET_ACCESS_KEY STAGING_R2_BUCKET_NAME RECOVERY_R2_ACCOUNT_ID RECOVERY_R2_ACCESS_KEY_ID RECOVERY_R2_SECRET_ACCESS_KEY RECOVERY_R2_BUCKET_NAME BACKUP_ENCRYPTION_KEY BACKUP_RETENTION_DAYS; do
+          for name in STAGING_DATABASE_URL STAGING_R2_ACCOUNT_ID STAGING_R2_ACCESS_KEY_ID STAGING_R2_SECRET_ACCESS_KEY STAGING_R2_BUCKET_NAME RECOVERY_R2_ACCOUNT_ID RECOVERY_R2_ACCESS_KEY_ID RECOVERY_R2_SECRET_ACCESS_KEY RECOVERY_R2_BUCKET_NAME BACKUP_ENCRYPTION_KEY BACKUP_RETENTION_DAYS; do
             if [[ -z "${!name}" ]]; then
               echo "::error::Required Actions secret is missing: $name"
               missing=1
@@ -61,15 +53,14 @@ jobs:
           done
           exit "$missing"
 
-  rehearse:
-    name: Backup staging and restore to isolated recovery targets
+  backup:
+    name: Back up staging database and proof objects
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     env:
       NODE_ENV: production
       STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-      RECOVERY_DATABASE_URL: ${{ secrets.RECOVERY_DATABASE_URL }}
       STAGING_R2_ACCOUNT_ID: ${{ secrets.STAGING_R2_ACCOUNT_ID }}
       STAGING_R2_ACCESS_KEY_ID: ${{ secrets.STAGING_R2_ACCESS_KEY_ID }}
       STAGING_R2_SECRET_ACCESS_KEY: ${{ secrets.STAGING_R2_SECRET_ACCESS_KEY }}
@@ -95,5 +86,5 @@ jobs:
 
       - uses: ./.github/actions/setup-pg-client-18
 
-      - name: Back up staging and restore into the empty recovery database
-        run: node scripts/rehearse-staging-recovery.mjs
+      - name: Create and verify the daily staging backup
+        run: node scripts/backup-staging-recovery.mjs
