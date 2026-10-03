@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
-import { classifyPgClientFailure } from './recovery-diagnostics.mjs'
+import { classifyPgClientFailure, createPgClientEnvironment } from './recovery-diagnostics.mjs'
 import pg from 'pg'
 
 const { Client } = pg
@@ -214,7 +214,7 @@ async function readStagingSnapshot(client, url, destination) {
     const attachments = await client.query(
       'select object_key as "objectKey", file_size as "fileSize", mime_type as "mimeType" from attachments order by id',
     )
-    const env = pgEnvironment(url)
+    const env = createPgClientEnvironment(url)
     await run(
       'pg_dump',
       [
@@ -232,20 +232,6 @@ async function readStagingSnapshot(client, url, destination) {
   } finally {
     await client.query('rollback').catch(() => undefined)
   }
-}
-
-function pgEnvironment(url) {
-  const env = { ...process.env }
-  env.PGHOST = url.hostname
-  env.PGPORT = url.port || '5432'
-  env.PGUSER = decodeURIComponent(url.username)
-  env.PGPASSWORD = decodeURIComponent(url.password)
-  env.PGDATABASE = decodeURIComponent(url.pathname.slice(1))
-  env.PGSSLMODE = 'verify-full'
-  const channelBinding = url.searchParams.get('channel_binding')
-  if (channelBinding) env.PGCHANNELBINDING = channelBinding
-  env.PGCONNECT_TIMEOUT = '15'
-  return env
 }
 
 async function preflightProofObjects(source, target, sourceBucket, targetBucket, attachments) {
@@ -337,7 +323,7 @@ async function restoreDatabase(url, encrypted, key) {
   const nonce = header.subarray(magic.length, headerSize)
   const decipher = createDecipheriv('aes-256-gcm', key, nonce)
   decipher.setAuthTag(tag)
-  const env = pgEnvironment(url)
+  const env = createPgClientEnvironment(url)
   await runWithInput(
     'pg_restore',
     [

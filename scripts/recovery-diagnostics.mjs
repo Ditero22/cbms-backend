@@ -18,3 +18,18 @@ export function classifyPgClientFailure(output) {
     return 'database network connection failed'
   return 'PostgreSQL utility rejected the dump or restore request'
 }
+
+export function createPgClientEnvironment(url, inheritedEnvironment = process.env) {
+  const env = { ...inheritedEnvironment }
+  env.PGHOST = url.hostname
+  env.PGPORT = url.port || '5432'
+  env.PGUSER = decodeURIComponent(url.username)
+  env.PGPASSWORD = decodeURIComponent(url.password)
+  env.PGDATABASE = decodeURIComponent(url.pathname.slice(1))
+  env.PGSSLMODE = 'verify-full'
+  env.PGSSLROOTCERT = 'system'
+  const channelBinding = url.searchParams.get('channel_binding')
+  if (channelBinding) env.PGCHANNELBINDING = channelBinding
+  env.PGCONNECT_TIMEOUT = '15'
+  return env
+}
