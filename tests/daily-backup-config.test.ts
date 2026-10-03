@@ -25,6 +25,19 @@ describe('staging daily backup target rules', () => {
     expect(workflow).not.toContain('vars.RECOVERY_REHEARSAL_NEON_HOST')
   })
 
+  it('checks out the repository before importing restore preflight helpers', async () => {
+    const workflow = await readFile(
+      new URL('../.github/workflows/restore-scheduled-staging-backup.yml', import.meta.url),
+      'utf8',
+    )
+    const validateJob = workflow.split('  validate:')[1]?.split('  restore:')[0] ?? ''
+
+    expect(validateJob).toContain('actions/checkout@')
+    expect(validateJob.indexOf('actions/checkout@')).toBeLessThan(
+      validateJob.indexOf('Check presence of fresh-target recovery secrets'),
+    )
+  })
+
   it('reports only boolean target comparison results for safe preflight diagnosis', () => {
     const result = inspectRestoreTarget({
       rehearsalDatabaseUrl:
