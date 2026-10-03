@@ -107,7 +107,7 @@ try {
   )
   console.info('Proof object count copied or already identical:', proofResults.verified)
 } catch (error) {
-  if (error instanceof RecoveryError) console.error(error.message)
+  if (error?.name === 'RecoveryError') console.error(error.message)
   else
     console.error(
       'Staging recovery rehearsal failed. No credentials or record contents were logged; inspect the failed workflow step and recovery target state before retrying.',
@@ -127,9 +127,10 @@ function required(name) {
 }
 
 function databaseUrl(name) {
+  const value = required(name)
   let url
   try {
-    url = new URL(required(name))
+    url = new URL(value)
   } catch {
     stop(`${name} must be a valid PostgreSQL URL.`)
   }
@@ -390,12 +391,7 @@ function runWithInput(command, args, input, options) {
 }
 
 function stop(message) {
-  throw new RecoveryError(message)
-}
-
-class RecoveryError extends Error {
-  constructor(message) {
-    super(message)
-    this.name = 'RecoveryError'
-  }
+  const error = new Error(message)
+  error.name = 'RecoveryError'
+  throw error
 }
