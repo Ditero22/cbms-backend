@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { Client } from 'pg'
+import { assertLocalTestDatabase } from './local-test-database.mjs'
 
 const sourceDatabaseUrl = process.env.DATABASE_URL
 if (!sourceDatabaseUrl) {
@@ -8,9 +9,11 @@ if (!sourceDatabaseUrl) {
   process.exit(2)
 }
 
-const sourceUrl = new URL(sourceDatabaseUrl)
-if (!['postgres:', 'postgresql:'].includes(sourceUrl.protocol)) {
-  console.error('DATABASE_URL must be a PostgreSQL URL.')
+let sourceUrl
+try {
+  sourceUrl = assertLocalTestDatabase(sourceDatabaseUrl)
+} catch (error) {
+  console.error(error instanceof Error ? error.message : 'Invalid local test database target.')
   process.exit(2)
 }
 

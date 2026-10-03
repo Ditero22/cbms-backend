@@ -5,15 +5,13 @@ import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Client } from 'pg'
 import { createTestProofStorage } from './test-proof-storage.mjs'
+import { assertLocalTestDatabase } from './local-test-database.mjs'
 
 const backendDirectory = fileURLToPath(new URL('..', import.meta.url))
 const frontendDirectory = resolve(backendDirectory, '../cbms-frontend')
 const sourceDatabaseUrl = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL
 if (!sourceDatabaseUrl) throw new Error('Set DATABASE_URL or TEST_DATABASE_URL for browser tests.')
-const sourceUrl = new URL(sourceDatabaseUrl)
-if (!['postgres:', 'postgresql:'].includes(sourceUrl.protocol)) {
-  throw new Error('Browser tests require a PostgreSQL connection.')
-}
+const sourceUrl = assertLocalTestDatabase(sourceDatabaseUrl)
 
 const databaseName = `cbms_integration_browser_${randomBytes(6).toString('hex')}`
 const adminUrl = new URL(sourceUrl)

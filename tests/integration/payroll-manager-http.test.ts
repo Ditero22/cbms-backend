@@ -204,6 +204,12 @@ describe('branch-manager payroll HTTP access', () => {
     )
     cleanup.employees.push(...northEmployees, southEmployee)
 
+    const foreignEmployeeRun = await request<{
+      error: { code: string }
+    }>('POST', '/payroll', 'north', payrollInput(branchId, [southEmployee]))
+    expect(foreignEmployeeRun.status).toBe(400)
+    expect(foreignEmployeeRun.body.error.code).toBe('INVALID_PAYROLL_EMPLOYEE')
+
     const northOptions = await request<{ branches: { id: string }[]; employees: { id: string }[] }>(
       'GET',
       '/payroll/options',

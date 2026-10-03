@@ -1,5 +1,8 @@
 # Staging Database Operations
 
+> Shared documentation: [index](../md-docs/README.md), [current production progress](../md-docs/project/progressreport.md), and [approved release scope](../md-docs/project/release-scope.md). This package guide retains product/architecture details and dated checkpoints. Older “current” counts, follow-up tasks and scope assertions yield to those canonical sources; a documented feature is not proof of completion.
+
+
 The **Staging database operation** GitHub Actions workflow supports three explicit operations. It only runs from the `main` branch and requires the repository secret `STAGING_DATABASE_URL`.
 
 Configure repository secrets under **Settings → Secrets and variables → Actions**. Keep the database connection string and administrator credentials private; do not add them to this document, source control, issues, or chat.

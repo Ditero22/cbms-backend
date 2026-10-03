@@ -1,5 +1,10 @@
 # CBMS staging on Render, Neon, and Cloudflare
 
+> Shared documentation: [index](../md-docs/README.md), [current production progress](../md-docs/project/progressreport.md), and [approved release scope](../md-docs/project/release-scope.md). This package guide retains product/architecture details and dated checkpoints. Older “current” counts, follow-up tasks and scope assertions yield to those canonical sources; a documented feature is not proof of completion.
+
+
+> Legacy Pages-based setup guide. The current frontend repository also contains a Cloudflare Worker entry point and uses the staging API origin in `cbms-frontend/wrangler.jsonc`. For the current Worker proxy and environment-specific deployment flow, follow the shared [deployment runbook](../md-docs/deployment/deployment.md). Do not use this older Pages guide as evidence that staging or production resources are provisioned.
+
 This runbook prepares a free-tier staging deployment with the current application architecture:
 
 - Cloudflare Pages serves the Vite frontend and proxies `/api/*` to the API.

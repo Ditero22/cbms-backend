@@ -11,6 +11,11 @@ import { createDelivery, updateDeliveryStatus } from '@/features/deliveries/deli
 import { completeOrder } from '@/features/orders/order-lifecycle.service.js'
 import { createPayrollRun } from '@/features/payroll/payroll.service.js'
 import type { CreatePayrollRunInput } from '@/features/payroll/payroll.schemas.js'
+import {
+  expectedSampleEmployeeCounts,
+  hasExpectedSampleEmployeeDistribution,
+  isCompatibleSamplePayrollEntryCount,
+} from './sample-data-rules.js'
 
 const requiredDatabaseName = 'cbms_dev'
 function stableUuid(seed: string) {
@@ -37,6 +42,7 @@ const branchFixtures = [
       ['EMP-BR001-010', 'Nestor Ramos', 'Site Worker', 'nestor.ramos'],
       ['EMP-BR001-011', 'Dante Villanueva', 'Site Worker', 'dante.villanueva'],
       ['EMP-BR001-012', 'Joel Mercado', 'Site Worker', 'joel.mercado'],
+      ['EMP-BR001-013', 'Rico Salazar', 'Laborer', 'rico.salazar'],
     ],
   },
   {
@@ -58,6 +64,7 @@ const branchFixtures = [
       ['EMP-BR002-010', 'Omar Santiago', 'Site Worker', 'omar.santiago'],
       ['EMP-BR002-011', 'Rico Panganiban', 'Site Worker', 'rico.panganiban'],
       ['EMP-BR002-012', 'Alvin Manalo', 'Site Worker', 'alvin.manalo'],
+      ['EMP-BR002-013', 'Arnel Bautista', 'Laborer', 'arnel.bautista'],
     ],
   },
   {
@@ -79,6 +86,7 @@ const branchFixtures = [
       ['EMP-BR003-010', 'Rogelio Reyes', 'Site Worker', 'rogelio.reyes'],
       ['EMP-BR003-011', 'Ruben Villanueva', 'Site Worker', 'ruben.villanueva'],
       ['EMP-BR003-012', 'Nicanor David', 'Site Worker', 'nicanor.david'],
+      ['EMP-BR003-013', 'Mario Dela Cruz', 'Laborer', 'mario.delacruz'],
     ],
   },
 ] as const
@@ -647,7 +655,7 @@ async function seedPayroll(
        where branch_id=$1 and employee_number like $2 and deleted_at is null order by employee_number`,
       [branchId, `EMP-${branch.code.replace('-', '')}-%`],
     )
-    if (employeeResult.rows.length !== 12) {
+    if (employeeResult.rows.length !== expectedSampleEmployeeCounts.perBranch) {
       throw new Error(`Could not prepare the full sample payroll for ${branch.code}.`)
     }
     const entries = employeeResult.rows.map(
@@ -730,27 +738,31 @@ async function seedPayroll(
          from payroll_entries where payroll_run_id=$1 order by employee_id`,
         [existing.rows[0].id],
       )
-      if (
-        saved.rows.length !== entries.length ||
-        entries.some(
-          (entry) =>
-            !saved.rows.some(
-              (row) =>
-                row.employeeId === entry.employeeId &&
-                row.payBasis === entry.payBasis &&
-                Number(row.units) === Number(entry.units) &&
-                Number(row.rate) === Number(entry.rate) &&
-                Number(row.additionalPay) ===
-                  entry.adjustments
-                    .filter((adjustment) => adjustment.kind === 'earning')
-                    .reduce((sum, adjustment) => sum + Number(adjustment.amount), 0) &&
-                Number(row.deductions) ===
-                  entry.adjustments
-                    .filter((adjustment) => adjustment.kind === 'deduction')
-                    .reduce((sum, adjustment) => sum + Number(adjustment.amount), 0),
-            ),
+      const matchesEntries = (expectedEntries: typeof entries) =>
+        saved.rows.length === expectedEntries.length &&
+        expectedEntries.every((entry) =>
+          saved.rows.some(
+            (row) =>
+              row.employeeId === entry.employeeId &&
+              row.payBasis === entry.payBasis &&
+              Number(row.units) === Number(entry.units) &&
+              Number(row.rate) === Number(entry.rate) &&
+              Number(row.additionalPay) ===
+                entry.adjustments
+                  .filter((adjustment) => adjustment.kind === 'earning')
+                  .reduce((sum, adjustment) => sum + Number(adjustment.amount), 0) &&
+              Number(row.deductions) ===
+                entry.adjustments
+                  .filter((adjustment) => adjustment.kind === 'deduction')
+                  .reduce((sum, adjustment) => sum + Number(adjustment.amount), 0),
+          ),
         )
-      ) {
+      const matchesCurrentCohort = matchesEntries(entries)
+      const matchesPriorCohort =
+        isCompatibleSamplePayrollEntryCount(saved.rows.length) &&
+        saved.rows.length < entries.length &&
+        matchesEntries(entries.slice(0, saved.rows.length))
+      if (!matchesCurrentCohort && !matchesPriorCohort) {
         throw new Error(
           `A payroll run already occupies the sample period at ${branch.code}; it was left untouched.`,
         )
@@ -780,20 +792,22 @@ async function verify(
      where b.code=any($1::text[]) group by b.code order by b.code`,
     [branchFixtures.map((branch) => branch.code)],
   )
-  if (employeeCounts.rows.length !== 3 || employeeCounts.rows.some((row) => row.count !== 12))
-    throw new Error('Sample employee verification failed; expected 12 sample employees per branch.')
+  if (
+    employeeCounts.rows.length !== 3 ||
+    employeeCounts.rows.some((row) => row.count !== expectedSampleEmployeeCounts.perBranch)
+  )
+    throw new Error(
+      `Sample employee verification failed; expected ${expectedSampleEmployeeCounts.perBranch} sample employees per branch.`,
+    )
   for (const branch of branchFixtures) {
     const roles = await pool.query<{ position: string; count: number }>(
       `select position,count(*)::int as count from employees where branch_id=$1 and employee_number like $2 group by position`,
       [branchIds.get(branch.code), `EMP-${branch.code.replace('-', '')}-%`],
     )
-    const actual = Object.fromEntries(roles.rows.map((row) => [row.position, row.count]))
-    if (
-      actual['Branch Manager'] !== 1 ||
-      actual.Staff !== 1 ||
-      actual.Driver !== 5 ||
-      actual['Site Worker'] !== 5
+    const positions = roles.rows.flatMap(({ position, count }) =>
+      Array.from({ length: count }, () => position),
     )
+    if (!hasExpectedSampleEmployeeDistribution(positions))
       throw new Error(`Sample position verification failed for ${branch.code}.`)
   }
   const users = await pool.query<{ count: number }>(
@@ -871,19 +885,19 @@ async function verify(
   }
   if (
     Number(payrollSummary.rows[0]?.runs) !== 3 ||
-    Number(payrollSummary.rows[0]?.entries) !== 36 ||
-    Number(payrollSummary.rows[0]?.regularPay) !== 36
+    ![36, expectedSampleEmployeeCounts.total].includes(Number(payrollSummary.rows[0]?.entries)) ||
+    Number(payrollSummary.rows[0]?.regularPay) !== Number(payrollSummary.rows[0]?.entries)
   ) {
     throw new Error(
-      'Sample payroll verification failed; expected three runs and 36 regular-pay entries.',
+      'Sample payroll verification failed; expected three compatible runs with regular pay for every entry.',
     )
   }
   console.info(
     JSON.stringify({
       verified: true,
       sampleBranches: branchIds.size,
-      sampleEmployees: 36,
-      employeeDistributionPerBranch: { 'Branch Manager': 1, Staff: 1, Driver: 5, 'Site Worker': 5 },
+      sampleEmployees: expectedSampleEmployeeCounts.total,
+      employeeDistributionPerBranch: expectedSampleEmployeeCounts.positions,
       sampleLoginAccounts: Number(users.rows[0]?.count ?? 0),
       sampleCustomers: Number(customers.rows[0]?.count ?? 0),
       sampleProducts: Number(products.rows[0]?.count ?? 0),
