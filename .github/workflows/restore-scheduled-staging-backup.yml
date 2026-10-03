@@ -84,12 +84,15 @@ jobs:
           done
           if [[ "$missing" -ne 0 ]]; then exit "$missing"; fi
           node --input-type=module -e '
-            const fresh = new URL(process.env.RECOVERY_DATABASE_URL_REHEARSAL)
-            const staging = new URL(process.env.STAGING_DATABASE_URL)
-            const current = new URL(process.env.RECOVERY_DATABASE_URL)
-            const expectedHost = process.env.RECOVERY_REHEARSAL_NEON_HOST.toLowerCase()
-            const sameDatabase = (left, right) => left.hostname === right.hostname && left.pathname === right.pathname
-            if (fresh.hostname.toLowerCase() !== expectedHost || fresh.hostname === staging.hostname || sameDatabase(fresh, current)) {
+            import { inspectRestoreTarget } from "./scripts/daily-backup-paths.mjs"
+            const result = inspectRestoreTarget({
+              rehearsalDatabaseUrl: process.env.RECOVERY_DATABASE_URL_REHEARSAL,
+              stagingDatabaseUrl: process.env.STAGING_DATABASE_URL,
+              existingRecoveryDatabaseUrl: process.env.RECOVERY_DATABASE_URL,
+              allowlistedHost: process.env.RECOVERY_REHEARSAL_NEON_HOST,
+            })
+            console.log(`Recovery target preflight: ${JSON.stringify(result)}`)
+            if (Object.values(result).some((passed) => !passed)) {
               console.error("::error::The fresh recovery target must match its allowlisted Neon host and differ from staging and the existing recovery database.")
               process.exit(1)
             }

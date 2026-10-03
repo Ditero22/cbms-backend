@@ -25,6 +25,27 @@ export function getRestoreConfirmation(runId, runAttempt, databaseName) {
   return `RESTORE-${runId}-ATTEMPT-${runAttempt}-TO-${databaseName}`
 }
 
+export function inspectRestoreTarget({
+  rehearsalDatabaseUrl,
+  stagingDatabaseUrl,
+  existingRecoveryDatabaseUrl,
+  allowlistedHost,
+}) {
+  const rehearsal = new URL(rehearsalDatabaseUrl)
+  const staging = new URL(stagingDatabaseUrl)
+  const existingRecovery = new URL(existingRecoveryDatabaseUrl)
+  const normalizedRehearsalHost = rehearsal.hostname.toLowerCase()
+  const sameDatabase = (left, right) =>
+    left.hostname.toLowerCase() === right.hostname.toLowerCase() &&
+    left.pathname.toLowerCase() === right.pathname.toLowerCase()
+
+  return {
+    hostMatchesAllowlist: normalizedRehearsalHost === allowlistedHost.trim().toLowerCase(),
+    hostDiffersFromStaging: normalizedRehearsalHost !== staging.hostname.toLowerCase(),
+    databaseDiffersFromExistingRecovery: !sameDatabase(rehearsal, existingRecovery),
+  }
+}
+
 export function validateDailyBackupManifest(manifest, runId, runAttempt, retentionDays = 30) {
   const paths = getDailyBackupPaths(runId, runAttempt)
   const createdAt = Date.parse(manifest?.createdAt)

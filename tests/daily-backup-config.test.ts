@@ -5,6 +5,7 @@ import {
   getArchivedProofKey,
   getDailyBackupPaths,
   getRestoreConfirmation,
+  inspectRestoreTarget,
   validateDailyBackupManifest,
 } from '../scripts/daily-backup-paths.mjs'
 
@@ -22,6 +23,41 @@ describe('staging daily backup target rules', () => {
       'RECOVERY_DATABASE_HOST: ${{ secrets.RECOVERY_REHEARSAL_NEON_HOST }}',
     )
     expect(workflow).not.toContain('vars.RECOVERY_REHEARSAL_NEON_HOST')
+  })
+
+  it('reports only boolean target comparison results for safe preflight diagnosis', () => {
+    const result = inspectRestoreTarget({
+      rehearsalDatabaseUrl:
+        'postgresql://recovery:private@ep-recovery.c-4.aws.neon.tech/cbms_recovery_rehearsal',
+      stagingDatabaseUrl: 'postgresql://staging:private@ep-staging.c-4.aws.neon.tech/cbms',
+      existingRecoveryDatabaseUrl:
+        'postgresql://recovery:private@ep-recovery.c-4.aws.neon.tech/neondb',
+      allowlistedHost: ' EP-RECOVERY.C-4.AWS.NEON.TECH ',
+    })
+
+    expect(result).toEqual({
+      hostMatchesAllowlist: true,
+      hostDiffersFromStaging: true,
+      databaseDiffersFromExistingRecovery: true,
+    })
+    expect(JSON.stringify(result)).not.toContain('private')
+    expect(JSON.stringify(result)).not.toContain('ep-recovery')
+  })
+
+  it('identifies staging and populated recovery collisions without returning endpoint values', () => {
+    const result = inspectRestoreTarget({
+      rehearsalDatabaseUrl: 'postgresql://recovery:private@ep-staging.c-4.aws.neon.tech/neondb',
+      stagingDatabaseUrl: 'postgresql://staging:private@ep-staging.c-4.aws.neon.tech/cbms',
+      existingRecoveryDatabaseUrl:
+        'postgresql://recovery:private@ep-staging.c-4.aws.neon.tech/neondb',
+      allowlistedHost: 'ep-staging.c-4.aws.neon.tech',
+    })
+
+    expect(result).toEqual({
+      hostMatchesAllowlist: true,
+      hostDiffersFromStaging: false,
+      databaseDiffersFromExistingRecovery: false,
+    })
   })
 
   it('keeps proof snapshots unique per workflow run under the 30-day lifecycle prefix', () => {
