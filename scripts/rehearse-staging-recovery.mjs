@@ -241,7 +241,7 @@ function pgEnvironment(url) {
   env.PGUSER = decodeURIComponent(url.username)
   env.PGPASSWORD = decodeURIComponent(url.password)
   env.PGDATABASE = decodeURIComponent(url.pathname.slice(1))
-  env.PGSSLMODE = url.searchParams.get('sslmode') || 'require'
+  env.PGSSLMODE = 'verify-full'
   const channelBinding = url.searchParams.get('channel_binding')
   if (channelBinding) env.PGCHANNELBINDING = channelBinding
   env.PGCONNECT_TIMEOUT = '15'
