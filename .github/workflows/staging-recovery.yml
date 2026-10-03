@@ -101,7 +101,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes postgresql-client-18
           echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
-          pg_dump --version | grep -Eq '^pg_dump \(PostgreSQL\) 18\.'
+          /usr/lib/postgresql/18/bin/pg_dump --version | grep -Eq '^pg_dump \(PostgreSQL\) 18\.'
 
       - name: Back up staging and restore into the empty recovery database
         run: node scripts/rehearse-staging-recovery.mjs
