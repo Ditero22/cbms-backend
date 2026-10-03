@@ -17,6 +17,7 @@
     "db:seed:sample": "node --env-file-if-exists=.env --import=./scripts/node-compat.mjs --import=tsx src/database/seed-sample-data.ts",
     "db:provision-admin": "node --env-file-if-exists=.env dist/src/database/provision-admin.js",
     "recovery:rehearse": "node --env-file-if-exists=.env scripts/rehearse-disposable-restore.mjs",
+    "recovery:restore-scheduled": "node --env-file-if-exists=.env scripts/restore-scheduled-staging-backup.mjs",
     "test": "vitest run",
     "test:integration": "node scripts/run-integration-tests.mjs",
     "test:integration:local": "node --env-file-if-exists=.env scripts/run-local-integration-tests.mjs"

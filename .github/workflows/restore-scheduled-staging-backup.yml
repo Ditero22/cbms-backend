@@ -1,0 +1,137 @@
+name: Restore selected scheduled staging backup
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_run_id:
+        description: GitHub Actions run ID of a successful Daily staging recovery backup
+        required: true
+        type: string
+      backup_run_attempt:
+        description: Attempt number for that backup run
+        required: true
+        default: '1'
+        type: string
+      target_database_name:
+        description: Exact database name in the fresh, empty recovery Neon project
+        required: true
+        type: string
+      confirmation:
+        description: Enter RESTORE-<run-id>-ATTEMPT-<attempt>-TO-<database-name>
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cbms-selected-staging-backup-restore
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate selected backup and isolated target
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require main and exact run, attempt, target, and confirmation
+        shell: bash
+        env:
+          TARGET_REF: ${{ github.ref }}
+          RUN_ID: ${{ inputs.backup_run_id }}
+          RUN_ATTEMPT: ${{ inputs.backup_run_attempt }}
+          TARGET_DATABASE: ${{ inputs.target_database_name }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [[ "$TARGET_REF" != "refs/heads/main" ]]; then
+            echo "::error::Run the selected-backup restore from main only."
+            exit 1
+          fi
+          if [[ ! "$RUN_ID" =~ ^[0-9]+$ || ! "$RUN_ATTEMPT" =~ ^[0-9]+$ ]]; then
+            echo "::error::Numeric backup run and attempt IDs are required."
+            exit 1
+          fi
+          if [[ ! "$TARGET_DATABASE" =~ ^[A-Za-z0-9_-]{1,63}$ ]]; then
+            echo "::error::A safe recovery database name is required."
+            exit 1
+          fi
+          expected="RESTORE-${RUN_ID}-ATTEMPT-${RUN_ATTEMPT}-TO-${TARGET_DATABASE}"
+          if [[ "$CONFIRMATION" != "$expected" ]]; then
+            echo "::error::The run-specific exact restore confirmation is required."
+            exit 1
+          fi
+
+      - name: Check presence of fresh-target recovery secrets without printing values
+        shell: bash
+        env:
+          RECOVERY_DATABASE_URL_REHEARSAL: ${{ secrets.RECOVERY_DATABASE_URL_REHEARSAL }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          RECOVERY_DATABASE_URL: ${{ secrets.RECOVERY_DATABASE_URL }}
+          RECOVERY_REHEARSAL_NEON_HOST: ${{ secrets.RECOVERY_REHEARSAL_NEON_HOST }}
+          RECOVERY_R2_ACCOUNT_ID: ${{ secrets.RECOVERY_R2_ACCOUNT_ID }}
+          RECOVERY_R2_ACCESS_KEY_ID: ${{ secrets.RECOVERY_R2_ACCESS_KEY_ID }}
+          RECOVERY_R2_SECRET_ACCESS_KEY: ${{ secrets.RECOVERY_R2_SECRET_ACCESS_KEY }}
+          RECOVERY_R2_BUCKET_NAME: ${{ secrets.RECOVERY_R2_BUCKET_NAME }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          BACKUP_RETENTION_DAYS: ${{ secrets.BACKUP_RETENTION_DAYS }}
+        run: |
+          missing=0
+          for name in RECOVERY_DATABASE_URL_REHEARSAL STAGING_DATABASE_URL RECOVERY_DATABASE_URL RECOVERY_REHEARSAL_NEON_HOST RECOVERY_R2_ACCOUNT_ID RECOVERY_R2_ACCESS_KEY_ID RECOVERY_R2_SECRET_ACCESS_KEY RECOVERY_R2_BUCKET_NAME BACKUP_ENCRYPTION_KEY BACKUP_RETENTION_DAYS; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Required Actions secret or variable is missing: $name"
+              missing=1
+            fi
+          done
+          if [[ "$missing" -ne 0 ]]; then exit "$missing"; fi
+          node --input-type=module -e '
+            const fresh = new URL(process.env.RECOVERY_DATABASE_URL_REHEARSAL)
+            const staging = new URL(process.env.STAGING_DATABASE_URL)
+            const current = new URL(process.env.RECOVERY_DATABASE_URL)
+            const expectedHost = process.env.RECOVERY_REHEARSAL_NEON_HOST.toLowerCase()
+            const sameDatabase = (left, right) => left.hostname === right.hostname && left.pathname === right.pathname
+            if (fresh.hostname.toLowerCase() !== expectedHost || fresh.hostname === staging.hostname || sameDatabase(fresh, current)) {
+              console.error("::error::The fresh recovery target must match its allowlisted Neon host and differ from staging and the existing recovery database.")
+              process.exit(1)
+            }
+          '
+
+  restore:
+    name: Restore archive and matching private proofs to empty recovery target
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NODE_ENV: production
+      GITHUB_EVENT_NAME: workflow_dispatch
+      RECOVERY_BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+      RECOVERY_BACKUP_RUN_ATTEMPT: ${{ inputs.backup_run_attempt }}
+      RECOVERY_DATABASE_NAME: ${{ inputs.target_database_name }}
+      RECOVERY_RESTORE_CONFIRMATION: ${{ inputs.confirmation }}
+      RECOVERY_DATABASE_URL: ${{ secrets.RECOVERY_DATABASE_URL_REHEARSAL }}
+      RECOVERY_DATABASE_HOST: ${{ secrets.RECOVERY_REHEARSAL_NEON_HOST }}
+      RECOVERY_R2_ACCOUNT_ID: ${{ secrets.RECOVERY_R2_ACCOUNT_ID }}
+      RECOVERY_R2_ACCESS_KEY_ID: ${{ secrets.RECOVERY_R2_ACCESS_KEY_ID }}
+      RECOVERY_R2_SECRET_ACCESS_KEY: ${{ secrets.RECOVERY_R2_SECRET_ACCESS_KEY }}
+      RECOVERY_R2_BUCKET_NAME: ${{ secrets.RECOVERY_R2_BUCKET_NAME }}
+      BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+      BACKUP_RETENTION_DAYS: ${{ secrets.BACKUP_RETENTION_DAYS }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install application dependencies
+        run: npm ci --include=dev
+
+      - name: Build the restored API readiness check
+        run: npm run build
+
+      - uses: ./.github/actions/setup-pg-client-18
+
+      - name: Restore the selected scheduled archive and matching proofs
+        run: npm run recovery:restore-scheduled
