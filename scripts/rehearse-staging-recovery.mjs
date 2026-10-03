@@ -22,8 +22,10 @@ let stagingClient
 let recoveryClient
 let stagingS3
 let recoveryS3
+let currentPhase = 'initialization'
 
 try {
+  currentPhase = 'configuration validation'
   const stagingUrl = databaseUrl('STAGING_DATABASE_URL')
   const recoveryUrl = databaseUrl('RECOVERY_DATABASE_URL')
   if (stagingUrl.hostname === recoveryUrl.hostname)
@@ -33,6 +35,7 @@ try {
     stop('BACKUP_RETENTION_DAYS must match the approved 30-day recovery retention.')
 
   const encryptionKey = parseEncryptionKey(required('BACKUP_ENCRYPTION_KEY'))
+  currentPhase = 'database connection'
   stagingClient = new Client({ connectionString: stagingUrl.href, connectionTimeoutMillis: 15000 })
   recoveryClient = new Client({
     connectionString: recoveryUrl.href,
@@ -40,12 +43,14 @@ try {
   })
   await Promise.all([stagingClient.connect(), recoveryClient.connect()])
 
+  currentPhase = 'recovery database emptiness check'
   const target = await recoveryClient.query('select current_database() as name')
   const expectedRecoveryDatabase = decodeURIComponent(recoveryUrl.pathname.slice(1))
   if (target.rows[0]?.name !== expectedRecoveryDatabase)
     stop('Recovery database identity could not be verified.')
   await requireEmptyRecoveryDatabase(recoveryClient)
 
+  currentPhase = 'staging snapshot and database dump'
   const stagingSnapshot = await readStagingSnapshot(stagingClient, stagingUrl, dumpPath)
   const recoveryBucket = required('RECOVERY_R2_BUCKET_NAME')
   const stagingBucket = required('STAGING_R2_BUCKET_NAME')
@@ -53,6 +58,7 @@ try {
 
   stagingS3 = makeS3('STAGING')
   recoveryS3 = makeS3('RECOVERY')
+  currentPhase = 'private proof-object preflight'
   await preflightProofObjects(
     stagingS3,
     recoveryS3,
@@ -60,6 +66,7 @@ try {
     recoveryBucket,
     stagingSnapshot.attachments,
   )
+  currentPhase = 'private proof-object copy and verification'
   const proofResults = await copyAndVerifyProofObjects(
     stagingS3,
     recoveryS3,
@@ -68,6 +75,7 @@ try {
     stagingSnapshot.attachments,
   )
 
+  currentPhase = 'encrypted database backup upload and verification'
   await encryptDump(dumpPath, encryptedPath, encryptionKey)
   const encryptedStat = await stat(encryptedPath)
   const backupKey = `cbms-recovery/backups/staging-${runId}.dump.enc`
@@ -94,7 +102,9 @@ try {
   )
     stop('Encrypted database backup failed remote storage verification.')
 
+  currentPhase = 'database restore into isolated recovery target'
   await restoreDatabase(recoveryUrl, encryptedPath, encryptionKey)
+  currentPhase = 'restored database and proof verification'
   const verified = await verifyDatabaseAndProofs(
     recoveryClient,
     recoveryS3,
@@ -108,10 +118,18 @@ try {
   console.info('Proof object count copied or already identical:', proofResults.verified)
 } catch (error) {
   if (error?.name === 'RecoveryError') console.error(error.message)
-  else
+  else {
+    const command = ['pg_dump', 'pg_restore'].includes(error?.commandName)
+      ? `${error.commandName}${Number.isInteger(error.exitCode) ? ` exited with code ${error.exitCode}` : ' could not start'}`
+      : null
+    const errorCode =
+      typeof error?.code === 'string' && /^[A-Z0-9_]{1,32}$/.test(error.code)
+        ? ` (error code ${error.code})`
+        : ''
     console.error(
-      'Staging recovery rehearsal failed. No credentials or record contents were logged; inspect the failed workflow step and recovery target state before retrying.',
+      `Staging recovery rehearsal failed during ${currentPhase}${command ? `: ${command}` : errorCode}. No credentials, record contents, or raw provider error messages were logged. Inspect the failed phase and recovery target state before retrying.`,
     )
+  }
   process.exitCode = 1
 } finally {
   await Promise.allSettled([stagingClient?.end(), recoveryClient?.end()])
@@ -372,9 +390,13 @@ function run(command, args, options) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { ...options, stdio: ['ignore', 'ignore', 'ignore'] })
     child.once('error', () => reject(new Error(`${command} could not be started.`)))
-    child.once('close', (code) =>
-      code === 0 ? resolve() : reject(new Error(`${command} failed.`)),
-    )
+    child.once('close', (code) => {
+      if (code === 0) return resolve()
+      const error = new Error(`${command} failed.`)
+      error.commandName = command
+      error.exitCode = code
+      reject(error)
+    })
   })
 }
 
@@ -382,9 +404,13 @@ function runWithInput(command, args, input, options) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { ...options, stdio: ['pipe', 'ignore', 'ignore'] })
     child.once('error', () => reject(new Error(`${command} could not be started.`)))
-    child.once('close', (code) =>
-      code === 0 ? resolve() : reject(new Error(`${command} failed.`)),
-    )
+    child.once('close', (code) => {
+      if (code === 0) return resolve()
+      const error = new Error(`${command} failed.`)
+      error.commandName = command
+      error.exitCode = code
+      reject(error)
+    })
     input.once('error', () => child.kill())
     input.pipe(child.stdin)
   })
