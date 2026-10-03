@@ -10,16 +10,22 @@ describe('assertLocalTestDatabase', () => {
     }
   })
 
+  it('accepts loopback cbms_test PostgreSQL URLs for disposable CI services', () => {
+    expect(
+      assertLocalTestDatabase('postgresql://test:test@127.0.0.1:5432/cbms_test').pathname,
+    ).toBe('/cbms_test')
+  })
+
   it('rejects remote PostgreSQL hosts', () => {
     expect(() =>
       assertLocalTestDatabase('postgresql://test:test@example.invalid/cbms_dev'),
-    ).toThrow(/loopback cbms_dev/)
+    ).toThrow(/loopback cbms_dev or cbms_test/)
   })
 
-  it('rejects non-development databases even on loopback', () => {
+  it('rejects unapproved databases even on loopback', () => {
     expect(() =>
-      assertLocalTestDatabase('postgresql://test:test@127.0.0.1:5433/cbms_test'),
-    ).toThrow(/loopback cbms_dev/)
+      assertLocalTestDatabase('postgresql://test:test@127.0.0.1:5433/cbms_other'),
+    ).toThrow(/loopback cbms_dev or cbms_test/)
   })
 
   it('rejects non-PostgreSQL and malformed URLs', () => {

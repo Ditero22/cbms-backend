@@ -1,4 +1,5 @@
 const localHosts = new Set(['localhost', '127.0.0.1', '::1'])
+const allowedDatabaseNames = new Set(['cbms_dev', 'cbms_test'])
 
 export function assertLocalTestDatabase(connectionString) {
   let url
@@ -16,9 +17,9 @@ export function assertLocalTestDatabase(connectionString) {
   const hostname = url.hostname.replace(/^\[|\]$/g, '').toLowerCase()
   const databaseName = decodeURIComponent(url.pathname.slice(1))
 
-  if (!localHosts.has(hostname) || databaseName !== 'cbms_dev') {
+  if (!localHosts.has(hostname) || !allowedDatabaseNames.has(databaseName)) {
     throw new Error(
-      'Refusing disposable test database creation unless DATABASE_URL targets loopback cbms_dev.',
+      'Refusing disposable test database creation unless DATABASE_URL targets loopback cbms_dev or cbms_test.',
     )
   }
 
