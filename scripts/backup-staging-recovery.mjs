@@ -99,6 +99,7 @@ try {
       format: 'cbms-staging-backup-manifest-v1',
       runId,
       runAttempt,
+      snapshotAt: snapshot.snapshotAt.toISOString(),
       createdAt: new Date().toISOString(),
       retentionDays,
       databaseBackup: { key: backupKey, size: encryptedStat.size, sha256: encryptedHash },
@@ -201,6 +202,7 @@ function makeS3(prefix) {
 async function readStagingSnapshot(client, url, destination) {
   await client.query('begin transaction isolation level repeatable read read only')
   try {
+    const transaction = await client.query('select transaction_timestamp() as "snapshotAt"')
     const snapshot = await client.query('select pg_export_snapshot() as id')
     const attachments = await client.query(
       'select object_key as "objectKey", file_size as "fileSize", mime_type as "mimeType" from attachments order by id',
@@ -218,7 +220,7 @@ async function readStagingSnapshot(client, url, destination) {
       ],
       { env: createPgClientEnvironment(url) },
     )
-    return { attachments: attachments.rows }
+    return { attachments: attachments.rows, snapshotAt: transaction.rows[0].snapshotAt }
   } finally {
     await client.query('rollback').catch(() => undefined)
   }
