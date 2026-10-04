@@ -1,40 +1,6 @@
 import type { PoolClient } from 'pg'
 
-export type OrderLifecycleSnapshot = {
-  id: string
-  orderNumber: string
-  branchId: string
-  customerName: string
-  status: string
-  stockMode: 'Reserved' | 'LegacyConsumed'
-  totalAmount: string
-  items: OrderLifecycleItem[]
-  paidAmount: string
-  processedRefundAmount: string
-  pendingRefundAmount: string
-  pendingReturnCount: number
-  hasPayments: boolean
-  hasActiveDelivery: boolean
-  hasUnverifiedLegacyDelivery: boolean
-}
-
-export type OrderLifecycleItem = {
-  id: string
-  productId: string
-  productName: string
-  sku: string
-  unit: string
-  quantity: string
-  cancelledQuantity: string
-  unitPrice: string
-  lineTotal: string
-  deliveredQuantity: string
-  returnedQuantity: string
-  pendingDeliveryQuantity: string
-  pendingReturnQuantity: string
-  availableReservationQuantity: string
-  reservationQuantity: string
-}
+import type { OrderLifecycleItem, OrderLifecycleSnapshot } from './order-lifecycle.domain.js'
 
 export async function lockOrder(client: PoolClient, orderId: string) {
   const result = await client.query(

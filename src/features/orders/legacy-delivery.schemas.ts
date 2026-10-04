@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { quantityToMilli } from './order.money.js'
+import { quantityToMilli } from '@/shared/domain/fixed-point.js'
 
 export const reconcileLegacyDeliverySchema = z
   .object({

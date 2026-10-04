@@ -638,17 +638,13 @@ describe('Staff HTTP authorization and branch isolation', () => {
       branchSales: { name: string; total: string }[]
     }>('GET', '/dashboard/summary', 'admin')
     expect(allBranches.status).toBe(200)
-    // Other integration files may add synthetic orders to this disposable database
-    // concurrently, so the company-wide total can exceed this file's fixtures.
-    // The exact amounts for these two branches are asserted below; the global
-    // aggregate must include at least their combined value.
+    // The dashboard deliberately returns only the top four branches. Other test
+    // files share this disposable DB, so these fixtures need not appear in that chart.
     expect(Number(allBranches.body.stats.salesTotal)).toBeGreaterThanOrEqual(128.1)
-    expect(allBranches.body.branchSales).toEqual(
-      expect.arrayContaining([
-        { name: `Staff A ${fixture}`, total: '22.34' },
-        { name: `Staff B ${fixture}`, total: '105.76' },
-      ]),
-    )
+    expect(allBranches.body.branchSales.length).toBeGreaterThanOrEqual(2)
+    expect(allBranches.body.branchSales.length).toBeLessThanOrEqual(4)
+    const chartTotals = allBranches.body.branchSales.map((row) => Number(row.total))
+    expect(chartTotals).toEqual([...chartTotals].sort((left, right) => right - left))
 
     const year = new Date().getUTCFullYear()
     const query = new URLSearchParams({
@@ -670,6 +666,9 @@ describe('Staff HTTP authorization and branch isolation', () => {
     })
     const csv = await exported.text()
     expect(exported.status).toBe(200)
+    expect(exported.headers.get('content-disposition')).toContain(
+      'materials-supply-operations-finance-sales-by-branch',
+    )
     expect(csv).toContain(`Staff A ${fixture}`)
     expect(csv).toContain(`Staff B ${fixture}`)
 

@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Client, Pool } from 'pg'
+import { assertLocalTestDatabase } from './local-test-database.mjs'
 
 const backendRoot = path.resolve(fileURLToPath(new URL('../', import.meta.url)))
 const projectRoot = path.dirname(backendRoot)
@@ -13,13 +14,13 @@ const databaseUrl = process.env.DATABASE_URL
 
 if (!databaseUrl) fail('DATABASE_URL is required. No database was changed.')
 
-const sourceUrl = new URL(databaseUrl)
-const sourceDatabase = decodeURIComponent(sourceUrl.pathname.slice(1))
-if (
-  !['postgres:', 'postgresql:'].includes(sourceUrl.protocol) ||
-  !['localhost', '127.0.0.1', '[::1]'].includes(sourceUrl.hostname) ||
-  sourceDatabase !== 'cbms_dev'
-) {
+let sourceUrl
+try {
+  sourceUrl = assertLocalTestDatabase(databaseUrl)
+} catch (error) {
+  fail(error instanceof Error ? error.message : 'Invalid local recovery source.')
+}
+if (decodeURIComponent(sourceUrl.pathname.slice(1)) !== 'cbms_dev') {
   fail('This rehearsal only runs from loopback cbms_dev. No database was changed.')
 }
 
@@ -32,11 +33,11 @@ if (!databaseNamePattern.test(sourceName) || !databaseNamePattern.test(restoredN
 
 const dockerId = await findPostgresContainer()
 const databaseUser = decodeURIComponent(sourceUrl.username)
-const adminUrl = new URL(databaseUrl)
+const adminUrl = new URL(sourceUrl)
 adminUrl.pathname = '/postgres'
-const sourceDatabaseUrl = new URL(databaseUrl)
+const sourceDatabaseUrl = new URL(sourceUrl)
 sourceDatabaseUrl.pathname = `/${sourceName}`
-const restoredDatabaseUrl = new URL(databaseUrl)
+const restoredDatabaseUrl = new URL(sourceUrl)
 restoredDatabaseUrl.pathname = `/${restoredName}`
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'cbms-recovery-rehearsal-'))
 const dumpPath = path.join(temporaryRoot, 'synthetic-recovery.dump')

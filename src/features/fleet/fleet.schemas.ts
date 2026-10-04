@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { moneyToCents } from '@/features/orders/order.money.js'
+import { moneyToCents } from '@/shared/domain/fixed-point.js'
 
 const text = (max: number) => z.string().trim().max(max).nullable().optional()
 const date = z.iso.date().nullable().optional()

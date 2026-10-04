@@ -16,7 +16,7 @@ async function seed() {
   try {
     await client.query('begin')
     await client.query(
-      "insert into roles (name, description, is_system) values ('Administrator', 'Full access to all CBMS modules.', 1) on conflict (name) do nothing",
+      "insert into roles (name, description, is_system) values ('Administrator', 'Full access to all Materials Supply Operations & Finance modules.', 1) on conflict (name) do nothing",
     )
     for (const permission of permissionKeys) {
       await client.query(

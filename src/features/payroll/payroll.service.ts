@@ -10,7 +10,7 @@ import {
   formatQuantityMilli,
   moneyToCents,
   quantityToMilli,
-} from '@/features/orders/order.money.js'
+} from '@/shared/domain/fixed-point.js'
 import { AppError } from '@/shared/errors/AppError.js'
 import { getAssignedBranchScope } from '@/shared/security/branch-scope.js'
 import { philippineDate } from '@/shared/philippine-date.js'

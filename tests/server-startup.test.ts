@@ -25,7 +25,9 @@ it('exits without listening when PostgreSQL cannot be reached', () => {
   expect(result.error).toBeUndefined()
   expect(result.status).toBe(1)
   expect(result.stdout).not.toContain('API listening')
-  expect(result.stderr).toContain('CBMS API startup failed (DATABASE_UNAVAILABLE)')
+  expect(result.stderr).toContain(
+    'Materials Supply Operations & Finance API startup failed (DATABASE_UNAVAILABLE)',
+  )
   expect(result.stderr).not.toContain('postgresql://')
   expect(result.stderr).not.toContain('ECONNREFUSED')
 }, 15_000)

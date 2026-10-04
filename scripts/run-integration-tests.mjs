@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { createTestProofStorage } from './test-proof-storage.mjs'
+import { assertIntegrationTestDatabase } from './local-test-database.mjs'
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL
 if (!testDatabaseUrl) {
@@ -7,18 +8,13 @@ if (!testDatabaseUrl) {
   process.exit(2)
 }
 
-let databaseName
+let testUrl
 try {
-  const url = new URL(testDatabaseUrl)
-  if (!['postgres:', 'postgresql:'].includes(url.protocol)) throw new Error('Invalid protocol')
-  databaseName = decodeURIComponent(url.pathname.slice(1))
-} catch {
-  console.error('TEST_DATABASE_URL must be a valid PostgreSQL URL.')
-  process.exit(2)
-}
-
-if (!/^cbms_(?:test|integration_[a-z0-9_]+)$/.test(databaseName)) {
-  console.error('Refusing to run integration tests outside cbms_test or cbms_integration_*.')
+  testUrl = assertIntegrationTestDatabase(testDatabaseUrl)
+} catch (error) {
+  console.error(
+    error instanceof Error ? error.message : 'Invalid integration test database target.',
+  )
   process.exit(2)
 }
 
@@ -26,7 +22,7 @@ const proofStorage = createTestProofStorage()
 const environment = {
   ...process.env,
   ...proofStorage.environment,
-  DATABASE_URL: testDatabaseUrl,
+  DATABASE_URL: testUrl.href,
   NODE_ENV: 'test',
   SESSION_SECRET: 'integration-test-only-session-secret-32-chars',
   // The HTTP acceptance suite intentionally makes many requests from one loopback address.

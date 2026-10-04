@@ -115,7 +115,18 @@ export async function findDeliveryDetail(
             assignment.reference as "assignmentReference",assignment.status as "assignmentStatus",
             assignment.started_at as "assignmentStartedAt",assignment.ended_at as "assignmentEndedAt",
             assignment.start_odometer::text as "startOdometer",
-            assignment.end_odometer::text as "endOdometer",assignment.notes as "activityNotes",
+            assignment.end_odometer::text as "endOdometer",
+            coalesce(
+              (
+                select nullif(a.new_value->>'notes','')
+                  from audit_logs a
+                 where a.entity_type='delivery' and a.entity_id=d.id
+                   and a.action='updated delivery status'
+                   and nullif(a.new_value->>'notes','') is not null
+                 order by a.created_at desc,a.id desc limit 1
+              ),
+              assignment.notes
+            ) as "activityNotes",
             d.created_at as "createdAt",d.updated_at as "updatedAt"
      from deliveries d
      join orders o on o.id=d.order_id

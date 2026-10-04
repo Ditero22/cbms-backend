@@ -473,7 +473,7 @@ async function seedInventory(
             branchId,
             quantityDelta: quantity,
             requestKey: stableUuid(`sample-stock:${branch.code}:${product.sku}`),
-            note: 'Initial CBMS sample inventory.',
+            note: 'Initial sample inventory for Materials Supply Operations & Finance.',
           },
           {
             userId: actor.id,

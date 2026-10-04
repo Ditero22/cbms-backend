@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { formatMoneyCents, moneyToCents } from '@/features/orders/order.money.js'
+import { formatMoneyCents, moneyToCents } from '@/shared/domain/fixed-point.js'
 import { paymentMethods } from './payment.schemas.js'
 
 const amountSchema = z

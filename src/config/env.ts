@@ -74,7 +74,7 @@ if (!result.success) {
   const issues = result.error.issues
     .map((issue) => `${issue.path.join('.') || 'environment'}: ${issue.message}`)
     .join('\n')
-  throw new Error(`Invalid CBMS backend configuration:\n${issues}`)
+  throw new Error(`Invalid Materials Supply Operations & Finance API configuration:\n${issues}`)
 }
 
 const parsed = result.data
@@ -108,7 +108,7 @@ export const env = {
   trustProxy: parsed.TRUST_PROXY === 'true' ? 1 : false,
   bootstrapAdminEmail: (parsed.BOOTSTRAP_ADMIN_EMAIL ?? 'admin@cbms.local').toLowerCase(),
   bootstrapAdminPassword: parsed.BOOTSTRAP_ADMIN_PASSWORD ?? '',
-  bootstrapAdminName: parsed.BOOTSTRAP_ADMIN_NAME ?? 'CBMS Administrator',
+  bootstrapAdminName: parsed.BOOTSTRAP_ADMIN_NAME ?? 'Materials Supply Administrator',
   sampleUserPassword: parsed.CBMS_SAMPLE_USER_PASSWORD ?? '',
   localUploadDir: parsed.LOCAL_UPLOAD_DIR,
   r2: {

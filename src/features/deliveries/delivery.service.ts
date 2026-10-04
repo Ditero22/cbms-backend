@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { withTransaction } from '@/database/transaction.js'
 import { AppError } from '@/shared/errors/AppError.js'
-import { formatQuantityMilli, quantityToMilli } from '@/features/orders/order.money.js'
+import { formatQuantityMilli, quantityToMilli } from '@/shared/domain/fixed-point.js'
 import * as orderLifecycleRepository from '@/features/orders/order-lifecycle.repository.js'
 import { assertLegacyDeliveriesVerified } from '@/features/orders/legacy-delivery.service.js'
 import { getAssignedBranchScope } from '@/shared/security/branch-scope.js'
@@ -396,7 +396,11 @@ export async function updateDeliveryStatus(
       deliveryId: delivery.id,
       reference: delivery.reference,
       action: 'updated delivery status',
-      data: { oldStatus: delivery.status, status },
+      data: {
+        oldStatus: delivery.status,
+        status,
+        ...(assignmentInput.notes ? { notes: assignmentInput.notes } : {}),
+      },
       ipAddress: context.ipAddress,
       requestId: context.requestId,
     })

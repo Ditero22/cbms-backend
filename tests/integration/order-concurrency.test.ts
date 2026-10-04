@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { pool } from '@/database/client.js'
 import { placeOrder, getOrderDetail } from '@/features/orders/order.service.js'
+import * as orderRepository from '@/features/orders/order.repository.js'
 import { getOrderLifecycleEligibility } from '@/features/orders/order-lifecycle.service.js'
 import { recordPayment } from '@/features/payments/payment.service.js'
 import { approveRefund, processRefund, requestRefund } from '@/features/payments/refund.service.js'
@@ -119,6 +120,66 @@ afterAll(async () => {
 })
 
 describe('order, refund, and return persistence', () => {
+  it('keeps order financial detail and lifecycle consistent across concurrent payment and refund commits', async () => {
+    const { orderId } = await makeOrder()
+    const reader = { ...user, permissions: [...user.permissions, 'audit.read'] }
+    async function readAcrossCommit(commit: () => Promise<unknown>) {
+      const readDetail = orderRepository.getOrderDetail
+      const intercepted = vi
+        .spyOn(orderRepository, 'getOrderDetail')
+        .mockImplementationOnce(async (...args) => {
+          const detail = await readDetail(...args)
+          // Commit on another connection between the detail collections and eligibility read.
+          await commit()
+          return detail
+        })
+      try {
+        return await getOrderDetail(orderId, reader)
+      } finally {
+        intercepted.mockRestore()
+      }
+    }
+
+    const beforePayment = await readAcrossCommit(() => payOrder(orderId))
+    expect(beforePayment.payments).toEqual([])
+    expect(beforePayment.paidAmount).toBe('0.00')
+    expect(beforePayment.balance).toBe('20.00')
+    expect(beforePayment.lifecycle.financial).toMatchObject({ netPaid: '0.00', balance: '20.00' })
+    expect(beforePayment.history.some((entry) => entry.action === 'recorded payment')).toBe(false)
+
+    const afterPayment = await getOrderDetail(orderId, reader)
+    expect(afterPayment.paidAmount).toBe('20.00')
+    expect(afterPayment.lifecycle.financial).toMatchObject({ netPaid: '20.00', balance: '0.00' })
+    const refund = await requestRefund(
+      orderId,
+      {
+        requestKey: randomUUID(),
+        paymentId: afterPayment.payments[0]!.id,
+        amount: '20.00',
+        method: 'Cash',
+        reason: 'Snapshot concurrency verification',
+      },
+      refundContext(),
+    )
+    await approveRefund(refund.id, refundContext())
+
+    const beforeRefund = await readAcrossCommit(() =>
+      processRefund(refund.id, undefined, refundContext()),
+    )
+    expect(beforeRefund.refunds).toMatchObject([{ id: refund.id, status: 'Approved' }])
+    expect(beforeRefund.paidAmount).toBe('20.00')
+    expect(beforeRefund.lifecycle.financial).toMatchObject({ netPaid: '20.00', balance: '0.00' })
+    expect(beforeRefund.history.some((entry) => entry.action === 'processed payment refund')).toBe(
+      false,
+    )
+
+    const afterRefund = await getOrderDetail(orderId, reader)
+    expect(afterRefund.refunds).toMatchObject([{ id: refund.id, status: 'Processed' }])
+    expect(afterRefund.paidAmount).toBe('0.00')
+    expect(afterRefund.balance).toBe('20.00')
+    expect(afterRefund.lifecycle.financial).toMatchObject({ netPaid: '0.00', balance: '20.00' })
+  })
+
   it('replays one committed order exactly once and rejects changed intent', async () => {
     const requestKey = randomUUID()
     const input = {

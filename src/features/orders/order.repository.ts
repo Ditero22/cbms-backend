@@ -25,8 +25,12 @@ export async function getOrderOptions(branchId?: string | null) {
   }
 }
 
-export async function getOrderDetail(orderId: string, branchId: string | undefined) {
-  const orderResult = await pool.query<{
+export async function getOrderDetail(
+  client: PoolClient,
+  orderId: string,
+  branchId: string | undefined,
+) {
+  const orderResult = await client.query<{
     id: string
     orderNumber: string
     customerName: string
@@ -60,9 +64,8 @@ export async function getOrderDetail(orderId: string, branchId: string | undefin
   const order = orderResult.rows[0]
   if (!order) return undefined
 
-  const [items, payments, deliveries, stockMovements, refunds, returns] = await Promise.all([
-    pool.query(
-      `select oi.id::text as id, oi.product_id::text as "productId", p.name as "productName",
+  const items = await client.query(
+    `select oi.id::text as id, oi.product_id::text as "productId", p.name as "productName",
               p.sku, p.unit, oi.quantity::text as quantity, oi.unit_price::text as "unitPrice",
               oi.line_total::text as "lineTotal", oi.cancelled_quantity::text as "cancelledQuantity",
               coalesce(delivered.quantity, 0)::text as "deliveredQuantity",
@@ -77,18 +80,18 @@ export async function getOrderDetail(orderId: string, branchId: string | undefin
           where ri.order_item_id = oi.id and r.status = 'Received'
        ) returned on true
        where oi.order_id = $1 order by oi.id`,
-      [orderId],
-    ),
-    pool.query(
-      `select p.id::text as id, p.reference, p.method, p.amount::text as amount, p.status,
+    [orderId],
+  )
+  const payments = await client.query(
+    `select p.id::text as id, p.reference, p.method, p.amount::text as amount, p.status,
               p.created_at as "createdAt", u.name as "recordedByName",
               p.payment_date::text as "paymentDate", p.external_reference as "externalReference", p.notes
        from payments p join users u on u.id = p.recorded_by
        where p.order_id = $1 order by p.created_at desc, p.id desc`,
-      [orderId],
-    ),
-    pool.query(
-      `select d.id::text as id, d.reference, d.destination, d.driver_name as "driverName",
+    [orderId],
+  )
+  const deliveries = await client.query(
+    `select d.id::text as id, d.reference, d.destination, d.driver_name as "driverName",
               fleet.id as "assignmentId",v.name as "vehicleName",v.plate_number as "plateNumber",
               d.scheduled_at as "scheduledAt", d.status, d.created_at as "createdAt", d.updated_at as "updatedAt",
               coalesce(lines.items, '[]'::json) as items
@@ -108,10 +111,10 @@ export async function getOrderDetail(orderId: string, branchId: string | undefin
            ) lines
        ) lines on true
        where d.order_id = $1 order by d.created_at desc, d.id desc`,
-      [orderId],
-    ),
-    pool.query(
-      `select it.id::text as id, it.transaction_type as "transactionType",
+    [orderId],
+  )
+  const stockMovements = await client.query(
+    `select it.id::text as id, it.transaction_type as "transactionType",
               it.quantity_delta::text as "quantityDelta", it.note, it.created_at as "createdAt",
               p.name as "productName", p.sku, u.name as "performedByName"
        from inventory_transactions it
@@ -121,10 +124,10 @@ export async function getOrderDetail(orderId: string, branchId: string | undefin
           or (it.reference_type = 'OrderReturn'
               and it.reference_id in (select r.id from order_returns r where r.order_id = $1))
        order by it.created_at desc, it.id desc`,
-      [orderId],
-    ),
-    pool.query(
-      `select r.id::text as id, r.reference, r.payment_id::text as "paymentId",
+    [orderId],
+  )
+  const refunds = await client.query(
+    `select r.id::text as id, r.reference, r.payment_id::text as "paymentId",
               p.reference as "paymentReference", r.amount::text as amount, r.method,
               r.reason, r.notes, r.status, r.processed_reference as "processedReference",
               r.requested_at as "requestedAt", r.approved_at as "approvedAt", r.processed_at as "processedAt",
@@ -134,10 +137,10 @@ export async function getOrderDetail(orderId: string, branchId: string | undefin
          left join users approver on approver.id = r.approved_by
          left join users processor on processor.id = r.processed_by
         where r.order_id = $1 order by r.requested_at desc, r.id desc`,
-      [orderId],
-    ),
-    pool.query(
-      `select r.id::text as id, r.reference, r.delivery_id::text as "deliveryId",
+    [orderId],
+  )
+  const returns = await client.query(
+    `select r.id::text as id, r.reference, r.delivery_id::text as "deliveryId",
               d.reference as "deliveryReference", r.reason, r.notes, r.status,
               r.requested_at as "requestedAt", r.approved_at as "approvedAt", r.received_at as "receivedAt",
               r.rejection_notes as "rejectionNotes", requester.name as "requestedByName",
@@ -155,9 +158,8 @@ export async function getOrderDetail(orderId: string, branchId: string | undefin
          left join users approver on approver.id = r.approved_by
          left join users receiver on receiver.id = r.received_by
         where r.order_id = $1 order by r.requested_at desc, r.id desc`,
-      [orderId],
-    ),
-  ])
+    [orderId],
+  )
 
   return {
     order,
@@ -171,11 +173,12 @@ export async function getOrderDetail(orderId: string, branchId: string | undefin
 }
 
 export async function getOrderAuditHistory(
+  client: PoolClient,
   orderId: string,
   branchId: string | undefined,
   limit = 25,
 ) {
-  const result = await pool.query(
+  const result = await client.query(
     `select a.id::text as id, a.action, a.old_value as "oldValue", a.new_value as "newValue",
             a.created_at as "createdAt", u.name as "actorName"
      from orders o
