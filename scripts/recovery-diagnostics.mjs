@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto'
+
 export function classifyPgClientFailure(output) {
   if (/server version mismatch|server version .* does not match/i.test(output))
     return 'PostgreSQL client/server versions are incompatible'
@@ -17,6 +19,27 @@ export function classifyPgClientFailure(output) {
   )
     return 'database network connection failed'
   return 'PostgreSQL utility rejected the dump or restore request'
+}
+
+export function classifyMigrationFailure(output) {
+  if (/SESSION_SECRET|Invalid .* configuration/i.test(output))
+    return 'migration runner configuration is incomplete'
+  if (/password authentication failed|authentication failed/i.test(output))
+    return 'recovery database authentication was rejected'
+  if (/permission denied/i.test(output)) return 'recovery database role lacks migration privileges'
+  if (
+    /could not connect|connection timed out|connection refused|network is unreachable/i.test(output)
+  )
+    return 'recovery database connection failed'
+  return 'application migration failed; raw database details were suppressed'
+}
+
+export function createMigrationEnvironment(url, inheritedEnvironment = {}) {
+  return {
+    ...inheritedEnvironment,
+    DATABASE_URL: url.href,
+    SESSION_SECRET: randomBytes(48).toString('base64url'),
+  }
 }
 
 export function createPgClientEnvironment(url, inheritedEnvironment = process.env) {

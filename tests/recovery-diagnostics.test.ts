@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  classifyMigrationFailure,
   classifyPgClientFailure,
+  createMigrationEnvironment,
   createPgClientEnvironment,
 } from '../scripts/recovery-diagnostics.mjs'
 
@@ -47,5 +49,42 @@ describe('createPgClientEnvironment', () => {
       PGCONNECT_TIMEOUT: '15',
     })
     expect(inheritedEnvironment.PGSSLMODE).toBe('disable')
+  })
+})
+
+describe('migration recovery diagnostics', () => {
+  it('classifies migration failures into safe categories without echoing raw output', () => {
+    expect(classifyMigrationFailure('SESSION_SECRET is missing')).toBe(
+      'migration runner configuration is incomplete',
+    )
+    expect(classifyMigrationFailure('password authentication failed for user private')).toBe(
+      'recovery database authentication was rejected',
+    )
+    expect(classifyMigrationFailure('permission denied for schema public')).toBe(
+      'recovery database role lacks migration privileges',
+    )
+    expect(classifyMigrationFailure('could not connect to server: connection refused')).toBe(
+      'recovery database connection failed',
+    )
+    expect(classifyMigrationFailure('private-host customer@example.invalid password=hidden')).toBe(
+      'application migration failed; raw database details were suppressed',
+    )
+  })
+
+  it('sets a short-lived configuration-only secret without changing inherited settings', () => {
+    const inheritedEnvironment = {
+      PATH: '/usr/bin',
+      SESSION_SECRET: 'inherited-test-secret-that-must-not-be-reused',
+    }
+    const url = new URL('postgresql://qa-user:qa-password@recovery.example.invalid/cbms_recovery')
+    const environment = createMigrationEnvironment(url, inheritedEnvironment)
+
+    expect(environment.DATABASE_URL).toBe(url.href)
+    expect(environment.PATH).toBe('/usr/bin')
+    expect(environment.SESSION_SECRET).toMatch(/^[A-Za-z0-9_-]{64}$/)
+    expect(environment.SESSION_SECRET).not.toBe(inheritedEnvironment.SESSION_SECRET)
+    expect(inheritedEnvironment.SESSION_SECRET).toBe(
+      'inherited-test-secret-that-must-not-be-reused',
+    )
   })
 })

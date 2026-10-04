@@ -12,12 +12,20 @@ on:
         required: true
         default: '1'
         type: string
+      restore_mode:
+        description: Restore an empty target, or safely resume the supported interrupted migration checkpoint
+        required: true
+        default: restore
+        type: choice
+        options:
+          - restore
+          - resume
       target_database_name:
         description: Exact database name in the fresh, empty recovery Neon project
         required: true
         type: string
       confirmation:
-        description: Enter RESTORE-<run-id>-ATTEMPT-<attempt>-TO-<database-name>
+        description: Enter RESTORE-... for restore or RESUME-RESTORE-... for resume
         required: true
         type: string
 
@@ -40,6 +48,7 @@ jobs:
           TARGET_REF: ${{ github.ref }}
           RUN_ID: ${{ inputs.backup_run_id }}
           RUN_ATTEMPT: ${{ inputs.backup_run_attempt }}
+          RESTORE_MODE: ${{ inputs.restore_mode }}
           TARGET_DATABASE: ${{ inputs.target_database_name }}
           CONFIRMATION: ${{ inputs.confirmation }}
         run: |
@@ -55,7 +64,13 @@ jobs:
             echo "::error::A safe recovery database name is required."
             exit 1
           fi
-          expected="RESTORE-${RUN_ID}-ATTEMPT-${RUN_ATTEMPT}-TO-${TARGET_DATABASE}"
+          if [[ "$RESTORE_MODE" != "restore" && "$RESTORE_MODE" != "resume" ]]; then
+            echo "::error::Choose restore or resume mode."
+            exit 1
+          fi
+          prefix="RESTORE"
+          if [[ "$RESTORE_MODE" == "resume" ]]; then prefix="RESUME-RESTORE"; fi
+          expected="${prefix}-${RUN_ID}-ATTEMPT-${RUN_ATTEMPT}-TO-${TARGET_DATABASE}"
           if [[ "$CONFIRMATION" != "$expected" ]]; then
             echo "::error::The run-specific exact restore confirmation is required."
             exit 1
@@ -112,6 +127,7 @@ jobs:
       GITHUB_EVENT_NAME: workflow_dispatch
       RECOVERY_BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
       RECOVERY_BACKUP_RUN_ATTEMPT: ${{ inputs.backup_run_attempt }}
+      RECOVERY_RESTORE_MODE: ${{ inputs.restore_mode }}
       RECOVERY_DATABASE_NAME: ${{ inputs.target_database_name }}
       RECOVERY_RESTORE_CONFIRMATION: ${{ inputs.confirmation }}
       RECOVERY_DATABASE_URL: ${{ secrets.RECOVERY_DATABASE_URL_REHEARSAL }}

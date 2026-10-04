@@ -218,6 +218,13 @@
       "when": 1790939644111,
       "tag": "0030_jwt_refresh_rotation",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791062954784,
+      "tag": "0031_product_name_descriptions",
+      "breakpoints": true
     }
   ]
 }
