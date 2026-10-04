@@ -2,13 +2,19 @@ import { createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createServer as createNetServer } from 'node:net'
 import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdtemp, open, rm, stat } from 'node:fs/promises'
+import { mkdtemp, open, readFile, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import pg from 'pg'
-import { classifyPgClientFailure, createPgClientEnvironment } from './recovery-diagnostics.mjs'
+import {
+  classifyMigrationFailure,
+  classifyPgClientFailure,
+  createMigrationEnvironment,
+  createPgClientEnvironment,
+} from './recovery-diagnostics.mjs'
+import { validateRecoveryResumeCheckpoint } from './recovery-resume.mjs'
 import {
   approvedRecoveryBucket,
   getArchivedProofKey,
@@ -41,8 +47,10 @@ try {
     stop('Scheduled backup restores require a manual workflow dispatch.')
   if (!runId || !/^\d+$/.test(runId) || !runAttempt || !/^\d+$/.test(runAttempt))
     stop('Numeric backup run and attempt IDs are required.')
+  const restoreMode = process.env.RECOVERY_RESTORE_MODE ?? 'restore'
+  if (!['restore', 'resume'].includes(restoreMode)) stop('A supported recovery mode is required.')
   const paths = getDailyBackupPaths(runId, runAttempt)
-  const confirmation = getRestoreConfirmation(runId, runAttempt, targetName ?? '')
+  const confirmation = getRestoreConfirmation(runId, runAttempt, targetName ?? '', restoreMode)
   if (process.env.RECOVERY_RESTORE_CONFIRMATION !== confirmation)
     stop('The run, attempt, target database, and exact restore confirmation must match.')
 
@@ -66,7 +74,7 @@ try {
   const identity = await database.query('select current_database() as name')
   if (identity.rows[0]?.name !== targetName)
     stop('Recovery database identity could not be verified.')
-  await requireEmptyRecoveryDatabase(database)
+  if (restoreMode === 'restore') await requireEmptyRecoveryDatabase(database)
 
   currentPhase = 'selected run manifest verification'
   storage = makeRecoveryS3()
@@ -115,13 +123,17 @@ try {
     proofBytes.set(proof.sourceKey, archivedProof)
   }
 
-  currentPhase = 'archive decryption and database restore'
-  await decryptArchive(encryptedPath, dumpPath, encryptionKey)
-  await restoreDatabase(recoveryUrl, dumpPath)
+  if (restoreMode === 'resume') await requireSupportedMigrationResume(database, manifest)
+
+  if (restoreMode === 'restore') {
+    currentPhase = 'archive decryption and database restore'
+    await decryptArchive(encryptedPath, dumpPath, encryptionKey)
+    await restoreDatabase(recoveryUrl, dumpPath)
+  }
 
   currentPhase = 'applying current repository migrations to the isolated recovery database'
   await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'db:migrate'], {
-    env: { ...process.env, DATABASE_URL: recoveryUrl.href },
+    env: createMigrationEnvironment(recoveryUrl, process.env),
   })
 
   currentPhase = 'isolated recovered API health and readiness check'
@@ -409,6 +421,25 @@ async function verifyRestoredDatabase(client, storageClient, bucket, manifest) {
   }
 }
 
+async function requireSupportedMigrationResume(client, manifest) {
+  const journal = JSON.parse(await readFile('drizzle/meta/_journal.json', 'utf8'))
+  const applied = await client.query(`
+    select created_at::bigint as timestamp
+    from drizzle.__drizzle_migrations
+    order by created_at
+  `)
+
+  const attachments = await client.query(
+    'select object_key as "objectKey", file_size as "fileSize", mime_type as "mimeType" from attachments order by object_key',
+  )
+  validateRecoveryResumeCheckpoint({
+    expectedMigrationTimestamps: journal.entries.map((entry) => entry.when),
+    appliedMigrationTimestamps: applied.rows.map((row) => Number(row.timestamp)),
+    attachments: attachments.rows,
+    proofs: manifest.proofs,
+  })
+}
+
 async function verifyRecoveredApi(url, bucket, directory) {
   const serverPath = path.resolve('dist/src/server.js')
   await stat(serverPath).catch(() => stop('The compiled recovery API server is unavailable.'))
@@ -520,7 +551,10 @@ function run(command, args, options) {
       const error = new Error(`${command} failed.`)
       error.commandName = command
       error.exitCode = code
-      error.safeHint = classifyPgClientFailure(Buffer.concat(errorOutput).toString('utf8'))
+      const output = Buffer.concat(errorOutput).toString('utf8')
+      error.safeHint = ['npm', 'npm.cmd'].includes(command)
+        ? classifyMigrationFailure(output)
+        : classifyPgClientFailure(output)
       reject(error)
     })
   })

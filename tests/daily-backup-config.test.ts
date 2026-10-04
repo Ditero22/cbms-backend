@@ -80,6 +80,12 @@ describe('staging daily backup target rules', () => {
     expect(getRestoreConfirmation('37155345138', '1', 'neondb')).toBe(
       'RESTORE-37155345138-ATTEMPT-1-TO-neondb',
     )
+    expect(getRestoreConfirmation('37155345138', '1', 'cbms_recovery_rehearsal', 'resume')).toBe(
+      'RESUME-RESTORE-37155345138-ATTEMPT-1-TO-cbms_recovery_rehearsal',
+    )
+    expect(() => getRestoreConfirmation('37155345138', '1', 'neondb', 'replace')).toThrow(
+      'supported recovery mode',
+    )
     expect(validateDailyBackupManifest(manifest, '37155345138', '1')).toBe(manifest)
     expect(() => getRestoreConfirmation('37155345138', '1', '../production')).toThrow(
       'safe recovery database name',

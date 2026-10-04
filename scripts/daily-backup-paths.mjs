@@ -18,11 +18,13 @@ export function getArchivedProofKey(runId, runAttempt, objectKey) {
   return `${proofPrefix}/${objectKey.slice('r2/'.length)}`
 }
 
-export function getRestoreConfirmation(runId, runAttempt, databaseName) {
+export function getRestoreConfirmation(runId, runAttempt, databaseName, mode = 'restore') {
   getDailyBackupPaths(runId, runAttempt)
   if (!/^[A-Za-z0-9_-]{1,63}$/.test(databaseName))
     throw new Error('A safe recovery database name is required.')
-  return `RESTORE-${runId}-ATTEMPT-${runAttempt}-TO-${databaseName}`
+  if (!['restore', 'resume'].includes(mode)) throw new Error('A supported recovery mode is required.')
+  const prefix = mode === 'resume' ? 'RESUME-RESTORE' : 'RESTORE'
+  return `${prefix}-${runId}-ATTEMPT-${runAttempt}-TO-${databaseName}`
 }
 
 export function validateDailyBackupManifest(manifest, runId, runAttempt, retentionDays = 30) {
