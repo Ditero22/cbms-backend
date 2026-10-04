@@ -22,7 +22,8 @@ export function getRestoreConfirmation(runId, runAttempt, databaseName, mode = '
   getDailyBackupPaths(runId, runAttempt)
   if (!/^[A-Za-z0-9_-]{1,63}$/.test(databaseName))
     throw new Error('A safe recovery database name is required.')
-  if (!['restore', 'resume'].includes(mode)) throw new Error('A supported recovery mode is required.')
+  if (!['restore', 'resume'].includes(mode))
+    throw new Error('A supported recovery mode is required.')
   const prefix = mode === 'resume' ? 'RESUME-RESTORE' : 'RESTORE'
   return `${prefix}-${runId}-ATTEMPT-${runAttempt}-TO-${databaseName}`
 }
