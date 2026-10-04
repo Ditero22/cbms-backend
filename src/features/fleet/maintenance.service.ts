@@ -1,7 +1,7 @@
 import { withTransaction } from '@/database/transaction.js'
 import { AppError } from '@/shared/errors/AppError.js'
 import type { AuthenticatedUser } from '@/shared/types/auth.js'
-import { formatMoneyCents, moneyToCents } from '@/features/orders/order.money.js'
+import { formatMoneyCents, moneyToCents } from '@/shared/domain/fixed-point.js'
 import type { MaintenanceInput } from './fleet.schemas.js'
 import * as repository from './fleet.repository.js'
 import type { FleetContext } from './fleet.repository.js'

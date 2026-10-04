@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { formatMoneyCents, moneyToCents } from '@/features/orders/order.money.js'
+import { formatMoneyCents, moneyToCents } from '@/shared/domain/fixed-point.js'
 import { philippineDate } from '@/shared/philippine-date.js'
 
 export const paymentMethods = ['Cash', 'GCash', 'Bank transfer', 'Card', 'Cheque', 'Other'] as const

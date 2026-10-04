@@ -2,7 +2,7 @@ import { withTransaction } from '@/database/transaction.js'
 import { AppError } from '@/shared/errors/AppError.js'
 import { getAssignedBranchScope } from '@/shared/security/branch-scope.js'
 import type { AuthenticatedUser } from '@/shared/types/auth.js'
-import { formatQuantityMilli, quantityToMilli } from '@/features/orders/order.money.js'
+import { formatQuantityMilli, quantityToMilli } from '@/shared/domain/fixed-point.js'
 import { findInventoryRecord } from './inventory-detail.repository.js'
 import {
   findActiveStockTarget,

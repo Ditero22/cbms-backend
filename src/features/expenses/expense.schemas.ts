@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { formatMoneyCents, moneyToCents } from '@/features/orders/order.money.js'
+import { formatMoneyCents, moneyToCents } from '@/shared/domain/fixed-point.js'
 
 const expenseAmountSchema = z
   .union([z.string().max(30), z.number().finite()])

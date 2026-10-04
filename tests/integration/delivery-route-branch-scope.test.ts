@@ -340,6 +340,32 @@ describe('delivery route permissions and branch scope', () => {
     expect(hiddenForeign.body.error.code).toBe('DELIVERY_NOT_FOUND')
   })
 
+  it('retains activity notes in delivery details when no vehicle assignment exists', async () => {
+    const order = await createOrder('north', branchId, customerId)
+    const created = await createDelivery('north', order.id, order.orderItemId)
+    expect(created.status).toBe(201)
+
+    const notes = 'Customer requested the materials be left at the site office.'
+    const updated = await request<Delivery>(
+      'PATCH',
+      `/deliveries/${created.body.id}/status`,
+      'north',
+      {
+        status: 'In Transit',
+        notes,
+      },
+    )
+    expect(updated.status).toBe(200)
+
+    const detail = await request<{ activityNotes: string | null }>(
+      'GET',
+      `/deliveries/${created.body.id}`,
+      'north',
+    )
+    expect(detail.status).toBe(200)
+    expect(detail.body.activityNotes).toBe(notes)
+  })
+
   it('stores optional delivery proof privately and rejects cross-branch content access', async () => {
     const order = await createOrder('north', branchId, customerId)
     const created = await createDelivery('north', order.id, order.orderItemId)

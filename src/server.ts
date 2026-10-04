@@ -7,7 +7,7 @@ import { AppError } from './shared/errors/AppError.js'
 async function startServer() {
   await assertDatabaseReady()
   const server = app.listen(env.port, '0.0.0.0', () => {
-    console.log(`CBMS API listening on port ${env.port}`)
+    console.log(`Materials Supply Operations & Finance API listening on port ${env.port}`)
   })
   server.on('error', (error) => void failStartup(error))
 
@@ -53,7 +53,7 @@ async function failStartup(error: unknown) {
           : code === 'PORT_IN_USE'
             ? 'Stop the other process using the configured API port or choose a different port.'
             : 'Review the backend configuration and application package.'
-  console.error(`CBMS API startup failed (${code}). ${guidance}`)
+  console.error(`Materials Supply Operations & Finance API startup failed (${code}). ${guidance}`)
   process.exitCode = 1
   try {
     await pool.end()

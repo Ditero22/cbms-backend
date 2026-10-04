@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg'
 import type { InventoryRecord } from './inventory-detail.repository.js'
-import { quantityToMilli } from '@/features/orders/order.money.js'
+import { quantityToMilli } from '@/shared/domain/fixed-point.js'
 
 type Movement = {
   id: string

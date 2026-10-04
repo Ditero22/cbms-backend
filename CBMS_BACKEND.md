@@ -1,5 +1,7 @@
 # CBMS backend architecture
 
+Current cross-cutting guidance: [backend](../md-docs/architecture/BACKEND_ARCHITECTURE.md), [database](../md-docs/architecture/DATABASE_ARCHITECTURE.md), [API](../md-docs/architecture/API_ARCHITECTURE.md), [authorization](../md-docs/architecture/AUTHORIZATION_ARCHITECTURE.md), and [module boundaries](../md-docs/architecture/MODULE_BOUNDARIES.md). This package reference retains module detail.
+
 This guide describes the current code boundaries and durable constraints. It replaces the former implementation plan and generic backend tutorial, whose proposed folder layout and future-state statements no longer matched the repository. Verify behavior against source, migrations, and tests.
 
 ## Current structure

@@ -3,7 +3,7 @@ import { withTransaction } from '@/database/transaction.js'
 import { AppError } from '@/shared/errors/AppError.js'
 import type { AuthenticatedUser } from '@/shared/types/auth.js'
 import { getAssignedBranchScope } from '@/shared/security/branch-scope.js'
-import { formatMoneyCents, moneyToCents } from '@/features/orders/order.money.js'
+import { formatMoneyCents, moneyToCents } from '@/shared/domain/fixed-point.js'
 import * as orderLifecycleRepository from '@/features/orders/order-lifecycle.repository.js'
 import * as refundRepository from './refund.repository.js'
 

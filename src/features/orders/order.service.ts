@@ -5,17 +5,13 @@ import type { AuthenticatedUser } from '@/shared/types/auth.js'
 import { getAssignedBranchScope } from '@/shared/security/branch-scope.js'
 import * as orderRepository from './order.repository.js'
 import * as orderLifecycleRepository from './order-lifecycle.repository.js'
-import { getOrderLifecycleEligibility } from './order-lifecycle.service.js'
+import { calculateOrderEligibility } from './order-lifecycle.domain.js'
 import {
   calculateLineTotal,
   calculateOrderTotal,
   isOrderAmountRepresentable,
-  formatMoneyCents,
-  moneyToCents,
-  quantityToMilli,
-  formatQuantityMilli,
-  calculateLineTotalMilli,
 } from './order.money.js'
+import { quantityToMilli, formatQuantityMilli } from '@/shared/domain/fixed-point.js'
 
 type PlaceOrderInput = {
   customerId: string
@@ -40,43 +36,33 @@ export async function getOrderDetail(orderId: string, user: AuthenticatedUser) {
     throw new AppError(403, 'FORBIDDEN', 'You do not have permission to view orders.')
   }
   const branchId = getAssignedBranchScope(user)
-  const detail = await orderRepository.getOrderDetail(orderId, branchId)
-  if (!detail) throw new AppError(404, 'ORDER_NOT_FOUND', 'The requested order was not found.')
+  return withTransaction(async (client) => {
+    // Detail, money, eligibility and audit history must describe one committed state.
+    await client.query('set transaction isolation level repeatable read read only')
+    const detail = await orderRepository.getOrderDetail(client, orderId, branchId)
+    if (!detail) throw new AppError(404, 'ORDER_NOT_FOUND', 'The requested order was not found.')
+    const snapshot = await orderLifecycleRepository.getOrderLifecycleSnapshot(client, orderId)
+    if (!snapshot) throw new AppError(404, 'ORDER_NOT_FOUND', 'The requested order was not found.')
+    const lifecycle = calculateOrderEligibility(snapshot)
+    const auditHistory = user.permissions.includes('audit.read')
+      ? await orderRepository.getOrderAuditHistory(client, orderId, branchId)
+      : []
 
-  const paidCents = detail.payments
-    .filter((payment) => payment.status === 'Paid')
-    .reduce<bigint>((total, payment) => total + moneyToCents(payment.amount), 0n)
-  const processedRefundCents = detail.refunds
-    .filter((refund) => refund.status === 'Processed')
-    .reduce<bigint>((total, refund) => total + moneyToCents(refund.amount), 0n)
-  const payableCents = detail.items.reduce(
-    (total, item) =>
-      total +
-      moneyToCents(item.lineTotal) -
-      moneyToCents(
-        calculateLineTotalMilli(item.unitPrice, quantityToMilli(item.cancelledQuantity)),
-      ),
-    0n,
-  )
-  const netPaidCents = paidCents - processedRefundCents
-  const auditHistory = user.permissions.includes('audit.read')
-    ? await orderRepository.getOrderAuditHistory(orderId, branchId)
-    : []
-
-  return {
-    ...detail.order,
-    paidAmount: formatMoneyCents(netPaidCents),
-    payableAmount: formatMoneyCents(payableCents),
-    balance: formatMoneyCents(payableCents - netPaidCents),
-    items: detail.items,
-    payments: detail.payments,
-    deliveries: detail.deliveries,
-    stockMovements: detail.stockMovements,
-    refunds: detail.refunds,
-    returns: detail.returns,
-    lifecycle: await getOrderLifecycleEligibility(orderId, user),
-    history: auditHistory,
-  }
+    return {
+      ...detail.order,
+      paidAmount: lifecycle.financial.netPaid,
+      payableAmount: lifecycle.financial.orderTotal,
+      balance: lifecycle.financial.balance,
+      items: detail.items,
+      payments: detail.payments,
+      deliveries: detail.deliveries,
+      stockMovements: detail.stockMovements,
+      refunds: detail.refunds,
+      returns: detail.returns,
+      lifecycle,
+      history: auditHistory,
+    }
+  })
 }
 
 export async function placeOrder(input: PlaceOrderInput, context: OrderRequestContext) {

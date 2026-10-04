@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { quantityToMilli } from '@/features/orders/order.money.js'
+import { quantityToMilli } from '@/shared/domain/fixed-point.js'
 
 export const deliveryStatuses = ['Scheduled', 'In Transit', 'Delivered', 'Failed'] as const
 

@@ -1,13 +1,16 @@
-import { pool } from '@/database/client.js'
 import { permissionKeys } from '@/database/permissions.js'
 import { hashPassword } from '@/shared/security/password.js'
+import { assertIntegrationTestEnvironment } from '../../scripts/local-test-database.mjs'
 
+process.env.DATABASE_URL = assertIntegrationTestEnvironment().href
 const databaseName = new URL(process.env.DATABASE_URL ?? '').pathname.slice(1)
 if (!/^cbms_integration_browser_[a-f0-9]+$/.test(databaseName)) {
   throw new Error('Browser fixtures may only be written to the disposable browser-test database.')
 }
 const password = process.env.CBMS_E2E_PASSWORD
 if (!password) throw new Error('The browser-test runner must provide a temporary password.')
+// Load the pool only after validating and pinning its effective local destination.
+const { pool } = await import('@/database/client.js')
 
 async function insertId(sql: string, values: unknown[]) {
   const result = await pool.query<{ id: string }>(sql, values)

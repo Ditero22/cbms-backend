@@ -62,7 +62,7 @@ reportRouter.get('/reports/export', async (req, res) => {
   )
     ? 'current'
     : `${parsed.data.dateFrom}-to-${parsed.data.dateTo}`
-  const filename = `cbms-${parsed.data.report}-${period}.csv`
+  const filename = `materials-supply-operations-finance-${parsed.data.report}-${period}.csv`
   res.setHeader('Content-Type', 'text/csv; charset=utf-8')
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
   res.send(reportToCsv(report))
