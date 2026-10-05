@@ -949,14 +949,41 @@ describe('Users & Roles through authenticated HTTP and PostgreSQL', () => {
          and u.id <> all($1::uuid[])`,
       [[accounts.administrator!.id, accounts.globalManager!.id]],
     )
-    const concurrentDeactivations = await Promise.all([
-      request<ApiError>('PATCH', `/users/${accounts.administrator!.id}`, 'globalManager', {
-        status: 'Inactive',
-      }),
-      request<ApiError>('PATCH', `/users/${accounts.globalManager!.id}`, 'administrator', {
-        status: 'Inactive',
-      }),
-    ])
+    // Hold the actual serialization lock until both requests have authenticated
+    // and reached it. Without this barrier one can revoke the other's session
+    // before authentication, correctly producing 401 instead of exercising 409.
+    const barrier = await pool.connect()
+    let pending: Promise<Awaited<ReturnType<typeof request<ApiError>>>[]> | undefined
+    let concurrentDeactivations: Awaited<ReturnType<typeof request<ApiError>>>[]
+    try {
+      await barrier.query('begin')
+      await barrier.query('select id from roles where is_system = 1 for update')
+      pending = Promise.all([
+        request<ApiError>('PATCH', `/users/${accounts.administrator!.id}`, 'globalManager', {
+          status: 'Inactive',
+        }),
+        request<ApiError>('PATCH', `/users/${accounts.globalManager!.id}`, 'administrator', {
+          status: 'Inactive',
+        }),
+      ])
+      await expect
+        .poll(async () => {
+          const waiting = await pool.query<{ count: number }>(
+            `select count(*)::int as count from pg_stat_activity
+           where datname = current_database() and state = 'active'
+             and query = 'select id from roles where is_system = 1 for update'
+             and cardinality(pg_blocking_pids(pid)) > 0`,
+          )
+          return waiting.rows[0]?.count
+        })
+        .toBe(2)
+      await barrier.query('commit')
+      concurrentDeactivations = await pending
+    } finally {
+      await barrier.query('rollback')
+      barrier.release()
+      await pending
+    }
     expect(concurrentDeactivations.map(({ status }) => status).sort()).toEqual([200, 409])
     expect(concurrentDeactivations.find(({ status }) => status === 409)?.body.error.code).toBe(
       'LAST_ADMIN_REQUIRED',
