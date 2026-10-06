@@ -3,8 +3,9 @@ name: Daily staging recovery backup
 on:
   workflow_dispatch:
   schedule:
-    # 02:23 Asia/Singapore daily (18:23 UTC). Avoid the top of the hour, when GitHub may delay scheduled runs.
-    - cron: '23 18 * * *'
+    # 02:23 Asia/Singapore daily, plus the owner-approved 14:23 fallback (18:23/06:23 UTC).
+    # Each attempt verifies its own snapshot. GitHub delays remain possible; freshness is monitored separately.
+    - cron: '23 6,18 * * *'
 
 permissions:
   contents: read
