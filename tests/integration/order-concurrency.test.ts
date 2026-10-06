@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { pool } from '@/database/client.js'
+import { authorizeProof } from '@/features/attachments/attachment.service.js'
 import { placeOrder, getOrderDetail } from '@/features/orders/order.service.js'
 import * as orderRepository from '@/features/orders/order.repository.js'
 import { getOrderLifecycleEligibility } from '@/features/orders/order-lifecycle.service.js'
@@ -120,6 +121,63 @@ afterAll(async () => {
 })
 
 describe('order, refund, and return persistence', () => {
+  it('proof authorization waits for the order before locking its delivery', async () => {
+    const { orderId, itemId } = await makeOrder()
+    const delivery = await createDelivery(
+      {
+        orderId,
+        destination: 'Concurrent proof site',
+        items: [{ orderItemId: itemId, quantity: '1' }],
+      },
+      scopedContext(),
+    )
+    const lifecycle = await pool.connect()
+    const proof = await pool.connect()
+    let proofResult: Promise<unknown> | undefined
+    try {
+      await lifecycle.query('begin')
+      await proof.query('begin')
+      await proof.query("set local statement_timeout = '5s'")
+      await lifecycle.query('select id from orders where id=$1 for update', [orderId])
+      const pid = (await proof.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!
+        .pid
+      proofResult = authorizeProof(
+        { entityType: 'delivery', entityId: delivery.id },
+        {
+          ...user,
+          permissions: ['deliveries.read', 'deliveries.update'],
+        },
+        true,
+        proof,
+        true,
+      ).then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      )
+      await expect
+        .poll(async () => {
+          const locks = await pool.query<{ waiting: boolean }>(
+            'select cardinality(pg_blocking_pids($1)) > 0 as waiting',
+            [pid],
+          )
+          return locks.rows[0]!.waiting
+        })
+        .toBe(true)
+      // Lifecycle writers lock order, then delivery. A waiting proof must not hold delivery first.
+      await expect(
+        lifecycle.query('select id from deliveries where id=$1 for update nowait', [delivery.id]),
+      ).resolves.toMatchObject({ rowCount: 1 })
+      await lifecycle.query('commit')
+      await expect(proofResult).resolves.toMatchObject({ value: { branchId } })
+    } finally {
+      await lifecycle.query('rollback')
+      if (proofResult) await proofResult
+      await proof.query('rollback')
+      lifecycle.release()
+      proof.release()
+    }
+  })
+
   it('keeps order financial detail and lifecycle consistent across concurrent payment and refund commits', async () => {
     const { orderId } = await makeOrder()
     const reader = { ...user, permissions: [...user.permissions, 'audit.read'] }
