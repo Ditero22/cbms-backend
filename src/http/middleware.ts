@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import cookieParser from 'cookie-parser'
 import cors from 'cors'
-import express, { type Express } from 'express'
+import express, { type Express, type RequestHandler } from 'express'
 import { rateLimit } from 'express-rate-limit'
 import helmet from 'helmet'
 import { pinoHttp } from 'pino-http'
@@ -10,11 +10,16 @@ import { logger } from '@/config/logger.js'
 import { AppError } from '@/shared/errors/AppError.js'
 import { errorDiagnostics, requestDiagnostics } from '@/shared/diagnostics.js'
 
+const rejectRateLimit: RequestHandler = (_req, _res, next) => {
+  next(new AppError(429, 'RATE_LIMITED', 'Too many requests. Please try again shortly.'))
+}
+
 export const generalLimiter = rateLimit({
   windowMs: env.rateLimitWindowMs,
   limit: env.rateLimitMax,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
+  handler: rejectRateLimit,
 })
 
 export const authLimiter = rateLimit({
@@ -22,11 +27,38 @@ export const authLimiter = rateLimit({
   limit: env.authRateLimitMax,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
+  handler: rejectRateLimit,
 })
 
 export function configureRequestMiddleware(app: Express) {
   if (env.trustProxy) app.set('trust proxy', env.trustProxy)
   app.disable('x-powered-by')
+  // Correlate even requests rejected by CORS or body parsing. Serializers omit private input.
+  app.use(
+    pinoHttp({
+      logger,
+      genReqId: (req, res) => {
+        const candidate = req.headers['x-request-id']
+        const id =
+          typeof candidate === 'string' && /^[a-zA-Z0-9_-]{8,100}$/.test(candidate)
+            ? candidate
+            : randomUUID()
+        res.setHeader('x-request-id', id)
+        return id
+      },
+      customProps: (req) => ({ requestId: String(req.id) }),
+      wrapSerializers: false,
+      serializers: {
+        req: requestDiagnostics,
+        res: (res) => ({ statusCode: res.statusCode }),
+        err: errorDiagnostics,
+      },
+    }),
+  )
+  app.use((req, _res, next) => {
+    req.requestId = String(req.id)
+    next()
+  })
   app.use(
     helmet({
       crossOriginResourcePolicy: { policy: 'same-site' },
@@ -59,31 +91,6 @@ export function configureRequestMiddleware(app: Express) {
         )
       }
     }
-    next()
-  })
-  app.use(
-    pinoHttp({
-      logger,
-      genReqId: (req, res) => {
-        const candidate = req.headers['x-request-id']
-        const id =
-          typeof candidate === 'string' && /^[a-zA-Z0-9_-]{8,100}$/.test(candidate)
-            ? candidate
-            : randomUUID()
-        res.setHeader('x-request-id', id)
-        return id
-      },
-      customProps: (req) => ({ requestId: String(req.id) }),
-      wrapSerializers: false,
-      serializers: {
-        req: requestDiagnostics,
-        res: (res) => ({ statusCode: res.statusCode }),
-        err: errorDiagnostics,
-      },
-    }),
-  )
-  app.use((req, _res, next) => {
-    req.requestId = String(req.id)
     next()
   })
 }

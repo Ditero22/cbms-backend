@@ -59,6 +59,15 @@ export async function authorizeProof(
   )
     throw new AppError(403, 'FORBIDDEN', 'You do not have permission to attach payroll proof.')
   const branchScope = getAssignedBranchScope(user)
+  if (lock && entity.entityType === 'delivery') {
+    // Lifecycle mutations lock order before delivery. A joined FOR UPDATE alone can
+    // take the child first and deadlock while a lifecycle writer holds the order.
+    await client.query(
+      `select o.id from orders o join deliveries d on d.order_id=o.id
+       where d.id=$1 and ($2::uuid is null or o.branch_id=$2) for update of o`,
+      [entity.entityId, branchScope],
+    )
+  }
   const query =
     entity.entityType === 'delivery'
       ? `select o.branch_id as "branchId", d.status from deliveries d join orders o on o.id=d.order_id where d.id=$1 ${lock ? 'for update of d, o' : ''}`

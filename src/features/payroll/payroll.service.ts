@@ -1,3 +1,8 @@
+import {
+  readPayrollRun,
+  readPayrollEntries,
+  readPayrollAdjustments,
+} from './payroll-read.repository.js'
 import { writeAudit } from './payroll-audit.js'
 export { markPayrollEntryPaid, markPayrollEntryPaidWithProof } from './payroll-payment.service.js'
 import { createHash, randomUUID } from 'node:crypto'
@@ -576,65 +581,32 @@ export async function getPayrollRunDetail(
 ) {
   requirePermission(user, 'payroll.read')
   const branchScope = getAssignedBranchScope(user)
-  const runResult = await pool.query(
-    `select r.id,r.reference,r.period_start::date::text as "periodStart",
-            r.period_end::date::text as "periodEnd",r.employee_count as "employeeCount",
-            r.gross_pay::text as "grossPay",r.branch_id as "branchId",b.name as "branchName",
-            r.status,r.processed_by as "processedBy",u.name as "processedByName",
-            r.processed_at as "processedAt",r.created_at as "createdAt"
-     from payroll_runs r left join branches b on b.id=r.branch_id
-     left join users u on u.id=r.processed_by
-     where r.id=$1 and ($2::uuid is null or r.branch_id=$2)`,
-    [runId, branchScope],
-  )
-  const run = runResult.rows[0]
-  if (!run) throw new AppError(404, 'PAYROLL_RUN_NOT_FOUND', 'Pay run not found.')
-  const offset = (page - 1) * limit
-  const entryResult = await pool.query(
-    `select e.id,e.employee_id as "employeeId",e.employee_number as "employeeNumber",
-            e.employee_name as "employeeName",e.position,e.pay_basis as "payBasis",
-            e.units::text as units,e.rate::text as rate,e.regular_pay::text as "regularPay",
-            e.additional_pay::text as "additionalPay",e.deductions::text as deductions,
-            e.gross_pay::text as "grossPay",e.net_pay::text as "netPay",
-            e.payment_status as "paymentStatus",e.payment_date::text as "paymentDate",
-            e.payment_method as "paymentMethod",e.payment_reference as "paymentReference",
-            e.payment_notes as "paymentNotes",e.payment_proof_attachment_id as "proofAttachmentId",
-            e.paid_by as "paidBy",paid.name as "paidByName",e.paid_at as "paidAt",
-            e.received_at as "receivedAt",e.confirmed_by as "confirmedBy",
-            confirmed.name as "confirmedByName",e.acknowledgement,
-            count(*) over()::int as "totalEntries"
-     from payroll_entries e
-     left join users paid on paid.id=e.paid_by
-     left join users confirmed on confirmed.id=e.confirmed_by
-     where e.payroll_run_id=$1 and ($4::uuid is null or e.branch_id=$4)
-     order by e.employee_name,e.employee_number,e.id limit $2 offset $3`,
-    [runId, limit, offset, branchScope],
-  )
-  const entryIds = entryResult.rows.map((entry) => entry.id)
-  const adjustments = entryIds.length
-    ? await pool.query(
-        `select id,payroll_entry_id as "payrollEntryId",kind,type,amount::text as amount,notes
-         from payroll_entry_adjustments where payroll_entry_id=any($1::uuid[])
-         order by created_at,id`,
-        [entryIds],
-      )
-    : { rows: [] as { payrollEntryId: string }[] }
-  const grouped = new Map<string, unknown[]>()
-  for (const adjustment of adjustments.rows) {
-    const group = grouped.get(adjustment.payrollEntryId) ?? []
-    group.push(adjustment)
-    grouped.set(adjustment.payrollEntryId, group)
-  }
-  const totalEntries = Number(entryResult.rows[0]?.totalEntries ?? 0)
-  return {
-    run,
-    entries: entryResult.rows.map((entry) => ({
-      ...entry,
-      adjustments: grouped.get(entry.id) ?? [],
-    })),
-    page,
-    pageSize: limit,
-    totalEntries,
-    totalPages: Math.max(1, Math.ceil(totalEntries / limit)),
-  }
+  return withTransaction(async (client) => {
+    await client.query('set transaction isolation level repeatable read read only')
+    const run = await readPayrollRun(client, runId, branchScope)
+    if (!run) throw new AppError(404, 'PAYROLL_RUN_NOT_FOUND', 'Pay run not found.')
+    const entries = await readPayrollEntries(client, runId, branchScope, page, limit)
+    const adjustments = await readPayrollAdjustments(
+      client,
+      entries.map((entry) => entry.id),
+    )
+    const grouped = new Map<string, unknown[]>()
+    for (const adjustment of adjustments) {
+      const group = grouped.get(adjustment.payrollEntryId) ?? []
+      group.push(adjustment)
+      grouped.set(adjustment.payrollEntryId, group)
+    }
+    const totalEntries = Number(entries[0]?.totalEntries ?? 0)
+    return {
+      run,
+      entries: entries.map((entry) => ({
+        ...entry,
+        adjustments: grouped.get(entry.id) ?? [],
+      })),
+      page,
+      pageSize: limit,
+      totalEntries,
+      totalPages: Math.max(1, Math.ceil(totalEntries / limit)),
+    }
+  })
 }
